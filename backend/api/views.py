@@ -612,10 +612,23 @@ def stt_parse_excel_view(request):
         ws = wb.worksheets[0]
 
         def cv(row_n, col_letter):
+            """Read a cell, normalising Excel float/string artifacts.
+
+            ID digit cells may come back as int, float (8.0), or even str ("8.0")
+            depending on how the template was saved. All three must collapse to
+            a single-digit string — otherwise joining 13 of them produces
+            "8.06.00.08.0..." artefacts in the resulting id_number.
+            """
             cell = ws[f'{col_letter}{row_n}']
-            if cell.value is None:
+            v = cell.value
+            if v is None:
                 return ''
-            return str(cell.value).strip()
+            if isinstance(v, float) and v.is_integer():
+                return str(int(v))
+            s = str(v).strip()
+            if re.match(r'^-?\d+\.0+$', s):
+                return s.split('.')[0]
+            return s
 
         session = {
             'programme': cv(16, 'C'),
@@ -631,7 +644,16 @@ def stt_parse_excel_view(request):
             name = cv(r, 'I')
             race = cv(r, 'Z')
             gender = cv(r, 'AA')
-            id_number = ''.join(cv(r, c) for c in id_cols).replace(' ', '')
+            # For ID digit cells, always take the integer part only (cells
+            # here are supposed to hold a single digit 0-9; a "8.06" cell is
+            # treated as "8" and any stray non-digits stripped).
+            id_digit_parts = []
+            for c in id_cols:
+                raw = cv(r, c)
+                if '.' in raw:
+                    raw = raw.split('.')[0]
+                id_digit_parts.append(re.sub(r'\D', '', raw))
+            id_number = ''.join(id_digit_parts)
             if not surname and not name and not id_number:
                 continue
             rows_out.append({
