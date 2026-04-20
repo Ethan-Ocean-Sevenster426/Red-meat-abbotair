@@ -1,0 +1,157 @@
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: #f3f2f1;
+  color: #323130;
+  min-height: 100vh;
+}
+
+/* ── Login page ── */
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f3f2f1;
+}
+.login-topbar {
+  background: #0078d4;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+}
+.login-topbar-brand {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+.login-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+}
+.container {
+  max-width: 440px;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid #edebe9;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  padding: 40px 36px 36px;
+}
+.container h1 {
+  margin: 0 0 8px;
+  color: #323130;
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+.container .login-subtitle {
+  color: #605e5c;
+  font-size: 0.9rem;
+  margin: 0 0 28px;
+}
+label {
+  display: block;
+  margin-bottom: 4px;
+  color: #323130;
+  font-weight: 600;
+  font-size: 0.88rem;
+}
+.container input {
+  width: 100%;
+  padding: 8px 10px;
+  margin: 0 0 16px;
+  border: 1px solid #8a8886;
+  border-radius: 2px;
+  font-size: 0.95rem;
+  background: #ffffff;
+  color: #323130;
+  transition: border-color 150ms;
+}
+.container input:focus {
+  outline: none;
+  border-color: #0078d4;
+  box-shadow: 0 0 0 1px #0078d4;
+}
+.container button {
+  width: 100%;
+  padding: 10px 14px;
+  margin: 6px 0 14px;
+  border: none;
+  border-radius: 2px;
+  font-size: 0.95rem;
+  background: #0078d4;
+  color: #ffffff;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 150ms;
+}
+.container button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.container button:hover:not(:disabled) {
+  background: #106ebe;
+}
+.container button:active:not(:disabled) {
+  background: #005a9e;
+}
+.container select {
+  width: 100%;
+  padding: 8px 10px;
+  margin: 0 0 16px;
+  border: 1px solid #8a8886;
+  border-radius: 2px;
+  font-size: 0.95rem;
+  background: #ffffff;
+  color: #323130;
+}
+.container select:focus {
+  outline: none;
+  border-color: #0078d4;
+  box-shadow: 0 0 0 1px #0078d4;
+}
+.container select option {
+  background: #ffffff;
+  color: #323130;
+}
+.error {
+  color: #a4262c;
+  font-size: 0.88rem;
+  margin-bottom: 14px;
+  background: #fde7e9;
+  border: 1px solid #f1707b;
+  border-radius: 2px;
+  padding: 8px 12px;
+}
+.nav {
+  margin-bottom: 20px;
+}
+.nav button {
+  width: auto;
+  padding: 6px 14px;
+}
+p {
+  color: #605e5c;
+  font-size: 0.88rem;
+}
+a {
+  color: #0078d4;
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* Editable table cell inputs */
+.cell-input:focus {
+  background: rgba(0, 120, 212, 0.05) !important;
+  box-shadow: inset 0 0 0 1px #0078d4 !important;
+  border-radius: 2px;
+}

@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+*.log
+temp/
+C:\Temp\
+documents/
+.claude/
