@@ -6,3 +6,16 @@ temp/
 C:\Temp\
 documents/
 .claude/
+
+# Python / Django
+backend/.venv/
+backend/__pycache__/
+**/__pycache__/
+*.pyc
+backend/db.sqlite3
+backend/db.sqlite3-journal
+backend/media/
+
+# Local MySQL portable install (too big for git)
+backend/mysql/
+backend/mysql-archive.zip
