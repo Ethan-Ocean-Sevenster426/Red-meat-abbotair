@@ -37,6 +37,8 @@ class Command(BaseCommand):
         parser.add_argument('--truncate', action='store_true',
                             help='Delete existing rows before inserting.')
         parser.add_argument('--dir', default=None, help='Override seed-data directory.')
+        parser.add_argument('--skip', nargs='+', default=[],
+                            help='Table names to skip (e.g. --skip Users UserColumnPreferences).')
 
     def handle(self, *args, **options):
         seed_dir = Path(options['dir']) if options['dir'] else (
@@ -61,8 +63,13 @@ class Command(BaseCommand):
             with connection.cursor() as c:
                 c.execute('SET FOREIGN_KEY_CHECKS=0')
 
+        skip = set(options['skip'])
+
         try:
             for name in priority:
+                if name in skip:
+                    self.stdout.write(f'  skip (excluded): {name}')
+                    continue
                 table = FILE_TO_TABLE.get(name)
                 if not table:
                     continue
@@ -101,7 +108,8 @@ class Command(BaseCommand):
 
         batch, count = [], 0
         BATCH_SIZE = 500
-        sql = f'INSERT INTO {table} ({col_list}) VALUES ({placeholders})'
+        insert = 'INSERT IGNORE' if connection.vendor == 'mysql' else 'INSERT OR IGNORE INTO'
+        sql = f'{insert} INTO {table} ({col_list}) VALUES ({placeholders})' if connection.vendor != 'mysql' else f'INSERT IGNORE INTO {table} ({col_list}) VALUES ({placeholders})'
 
         with connection.cursor() as c:
             for row in rows:
