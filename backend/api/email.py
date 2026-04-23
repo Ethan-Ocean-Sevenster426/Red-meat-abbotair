@@ -59,94 +59,60 @@ def _graph_post(path: str, json_body: dict, token: str, extra_headers: dict | No
     )
 
 
-def convert_excel_to_pdf(xlsx_buffer: bytes) -> bytes:
-    """Upload Excel to OneDrive, set A4 portrait print area, download as PDF."""
-    token = get_access_token()
-    sender = settings.GRAPH_SENDER_EMAIL
-    temp_name = f"_stt_convert_{int(time.time() * 1000)}.xlsx"
-    drive_root = f"https://graph.microsoft.com/v1.0/users/{sender}/drive/root"
+def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53') -> bytes:
+    """Convert Excel to a single-page portrait A4 PDF using local Excel."""
+    import tempfile
+    import os
+    import win32com.client
+    import pythoncom
 
-    # 1. Upload
-    up = requests.put(
-        f"{drive_root}:/{temp_name}:/content",
-        headers={
-            'Authorization': f'Bearer {token}',
-            'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-        data=xlsx_buffer,
-        timeout=120,
-    )
-    up.raise_for_status()
-    item_id = up.json()['id']
-    item_url = f"https://graph.microsoft.com/v1.0/users/{sender}/drive/items/{item_id}"
-    excel_base = f"{item_url}/workbook"
+    tmp_xlsx = os.path.join(tempfile.gettempdir(), f'_stt_{int(time.time() * 1000)}.xlsx')
+    tmp_pdf = tmp_xlsx.replace('.xlsx', '.pdf')
 
     try:
-        # 2. Configure print area via Excel session
-        s = requests.post(
-            f"{excel_base}/createSession",
-            headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
-            json={'persistChanges': True},
-            timeout=30,
-        )
-        session_id = s.json().get('id') if s.ok else None
-        session_hdr = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-        if session_id:
-            session_hdr['workbook-session-id'] = session_id
+        with open(tmp_xlsx, 'wb') as f:
+            f.write(xlsx_buffer)
 
-        ws = requests.get(f"{excel_base}/worksheets", headers=session_hdr, timeout=30)
-        if ws.ok:
-            sheets = ws.json().get('value', [])
-            if sheets:
-                first_name = sheets[0]['name']
-                first_id = sheets[0]['id']
-                # Hide other sheets
-                for other in sheets[1:]:
-                    from urllib.parse import quote
-                    requests.patch(
-                        f"{excel_base}/worksheets('{quote(other['id'])}')",
-                        headers=session_hdr,
-                        json={'visibility': 'hidden'},
-                        timeout=30,
-                    )
-                # Set A4 portrait
-                from urllib.parse import quote
-                requests.patch(
-                    f"{excel_base}/worksheets('{quote(first_id)}')/pageLayout",
-                    headers=session_hdr,
-                    json={'paperSize': 'A4', 'orientation': 'portrait'},
-                    timeout=30,
-                )
-                # Set print area
-                requests.post(
-                    f"{excel_base}/names/add",
-                    headers=session_hdr,
-                    json={
-                        'name': '_xlnm.Print_Area',
-                        'reference': f"='{first_name}'!$A$1:$AD$53",
-                    },
-                    timeout=30,
-                )
+        pythoncom.CoInitialize()
+        excel = win32com.client.Dispatch('Excel.Application')
+        excel.Visible = False
+        excel.DisplayAlerts = False
 
-        if session_id:
-            try:
-                requests.post(f"{excel_base}/closeSession", headers=session_hdr, timeout=30)
-            except requests.RequestException:
-                pass
-
-        # 3. Download as PDF
-        pdf = requests.get(
-            f"{item_url}/content?format=pdf",
-            headers={'Authorization': f'Bearer {token}'},
-            timeout=120,
-        )
-        pdf.raise_for_status()
-        return pdf.content
-    finally:
         try:
-            requests.delete(item_url, headers={'Authorization': f'Bearer {token}'}, timeout=30)
-        except requests.RequestException:
-            pass
+            wb = excel.Workbooks.Open(os.path.abspath(tmp_xlsx), ReadOnly=True)
+            ws = wb.Worksheets(1)
+
+            # Fit to 1 page, portrait, A4
+            ws.PageSetup.Zoom = False
+            ws.PageSetup.FitToPagesWide = 1
+            ws.PageSetup.FitToPagesTall = 1
+            ws.PageSetup.Orientation = 1   # xlPortrait
+            ws.PageSetup.PaperSize = 9     # A4
+            ws.PageSetup.PrintArea = print_area
+
+            # Tight margins
+            ws.PageSetup.LeftMargin = excel.InchesToPoints(0.2)
+            ws.PageSetup.RightMargin = excel.InchesToPoints(0.2)
+            ws.PageSetup.TopMargin = excel.InchesToPoints(0.2)
+            ws.PageSetup.BottomMargin = excel.InchesToPoints(0.2)
+            ws.PageSetup.HeaderMargin = excel.InchesToPoints(0.1)
+            ws.PageSetup.FooterMargin = excel.InchesToPoints(0.1)
+
+            # Export first sheet as PDF
+            wb.ExportAsFixedFormat(0, os.path.abspath(tmp_pdf))  # 0 = xlTypePDF
+            wb.Close(False)
+        finally:
+            excel.Quit()
+            pythoncom.CoUninitialize()
+
+        with open(tmp_pdf, 'rb') as f:
+            return f.read()
+    finally:
+        for p in (tmp_xlsx, tmp_pdf):
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
 
 
 def _send_mail(message: dict) -> dict:
@@ -224,7 +190,8 @@ def send_database_form(*, to: str, abattoir_name: str, training_email: str,
     })
 
 
-def send_quotation_email(*, to: str, client_name: str, pdf_base64: str, file_name: str) -> dict:
+def send_quotation_email(*, to: str, cc: list[str] | None = None,
+                         client_name: str, pdf_base64: str, file_name: str) -> dict:
     html = f"""
       <p>Dear {client_name or 'Client'},</p>
       <p>Please find attached your quotation for Training and Support Services from the Red Meat Abattoir Association.</p>
@@ -233,17 +200,17 @@ def send_quotation_email(*, to: str, client_name: str, pdf_base64: str, file_nam
       <br/>
       <p>Kind regards,<br/>Red Meat Abattoir Association<br/>Abattoir Skills Training</p>
     """
-    return _send_mail({
-        'message': {
-            'subject': f'Quotation — {client_name or "RMAA Training Services"}',
-            'body': {'contentType': 'HTML', 'content': html},
-            'toRecipients': [{'emailAddress': {'address': to}}],
-            'attachments': [{
-                '@odata.type': '#microsoft.graph.fileAttachment',
-                'name': file_name or 'Quotation.pdf',
-                'contentType': 'application/pdf',
-                'contentBytes': pdf_base64,
-            }],
-        },
-        'saveToSentItems': True,
-    })
+    message = {
+        'subject': f'Quotation — {client_name or "RMAA Training Services"}',
+        'body': {'contentType': 'HTML', 'content': html},
+        'toRecipients': [{'emailAddress': {'address': to}}],
+        'attachments': [{
+            '@odata.type': '#microsoft.graph.fileAttachment',
+            'name': file_name or 'Quotation.pdf',
+            'contentType': 'application/pdf',
+            'contentBytes': pdf_base64,
+        }],
+    }
+    if cc:
+        message['ccRecipients'] = [{'emailAddress': {'address': addr}} for addr in cc if addr.strip()]
+    return _send_mail({'message': message, 'saveToSentItems': True})

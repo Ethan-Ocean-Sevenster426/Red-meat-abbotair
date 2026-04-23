@@ -67,6 +67,8 @@ urlpatterns = [
     path('stt-training-report', v.stt_list_create_view),
     path('stt-training-report/count', v.stt_views['count']),
     path('stt-training-report/breakdown', v.stt_breakdown_view),
+    path('stt-training-report/learner-summary', v.stt_learner_summary_view),
+    path('stt-training-report/learner-summary/count', v.stt_learner_summary_count_view),
     path('stt-training-report/parse-excel', v.stt_parse_excel_view),
     path('stt-training-report/export-pdf', v.stt_export_pdf_view),
     path('stt-training-report/<int:pk>', v.stt_views['retrieve_update_delete']),
@@ -91,4 +93,18 @@ urlpatterns = [
     path('documents/view', v.documents_view_view),
     path('documents/download', v.documents_download_view),
     path('documents/delete', v.documents_delete_view),
+
+    # fee structure
+    *_master('fee-structure', v.fee_structure_views),
+
+    # learners
+    path('learners', v.learner_list_create_view),
+    path('learners/count', v.learner_views['count']),
+    path('learners/merge', v.learner_merge_view),
+    path('learners/<int:pk>', v.learner_views['retrieve_update_delete']),
+    path('learners/<int:pk>/history', v.learner_views['history']),
+
+    # facilitators
+    path('facilitators', v.facilitators_view),
+    path('facilitators/<int:pk>', v.facilitator_delete_view),
 ]

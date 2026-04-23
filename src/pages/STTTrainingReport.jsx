@@ -25,11 +25,11 @@ const COLUMNS = [
   { key: 'training_start_date', label: 'Start Date',            w: 110 },
   { key: 'training_end_date',   label: 'End Date',              w: 110 },
   { key: 'abattoir_name',       label: 'Abattoir Name',         w: 200 },
-  { key: 'thru_put',            label: 'Thru-Put (L/H)',        w: 100 },
+  { key: 'thru_put',            label: 'Throughput (L/H)',        w: 100 },
   { key: 'specie',              label: 'Specie',                w: 100 },
   { key: 'work_station',        label: 'Work Station',          w: 130 },
   { key: 'report_to_client',    label: 'Report To Client',      w: 130 },
-  { key: 'reported_by',         label: 'Reported By',           w: 130 },
+  { key: 'reported_by',         label: 'Reported By',           w: 150, dynamic: 'facilitator' },
   { key: 'sample_take',         label: 'Sample Take',           w: 110 },
   { key: 'lab_report_received', label: 'Lab Report Received',   w: 150 },
   { key: 'am',                  label: 'AM',                    w: 50,  opts: ONE_OPTS },
@@ -131,9 +131,10 @@ export default function STTTrainingReport() {
 
   useEffect(() => { loadRows(page, appliedFilters); }, [page, appliedFilters, sortCol, sortDir, idCheck]);
 
-  // Check DB count on mount
+  // Check DB count + load facilitators on mount
   useEffect(() => {
     fetch('/api/stt-training-report/count').then(r => r.json()).then(d => setDbCount(d.count)).catch(() => {});
+    loadFacilitators();
   }, []);
 
   useEffect(() => {
@@ -332,13 +333,21 @@ export default function STTTrainingReport() {
   const [customAbattoirInput, setCustomAbattoirInput] = useState('');
   const [addingCustom, setAddingCustom]             = useState(false);
 
+  // Facilitator management state
+  const [facilitatorList, setFacilitatorList]           = useState([]);
+  const [showFacilitatorModal, setShowFacilitatorModal] = useState(false);
+  const [newFacName, setNewFacName]                     = useState('');
+  const [newFacSurname, setNewFacSurname]               = useState('');
+  const [addingFac, setAddingFac]                       = useState(false);
+  const [facError, setFacError]                         = useState('');
+
   // ── Delete row ──
   const [deleting, setDeleting] = useState({});
   const deleteRow = async (rowId) => {
     if (!confirm('Are you sure you want to delete this entry?')) return;
     setDeleting(prev => ({ ...prev, [rowId]: true }));
     try {
-      const res  = await fetch(`/api/stt-training-report/${rowId}`, { method: 'DELETE' });
+      const res  = await fetch(`/api/stt-training-report/${rowId}?user=${encodeURIComponent(user?.displayName || user?.username || '')}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
       setRows(prev => prev.filter(r => r.id !== rowId));
@@ -399,6 +408,7 @@ export default function STTTrainingReport() {
       setUploadRows(rows);
       setUploadError('');
       loadAbattoirNames();
+      loadFacilitators();
       setShowUploadModal(true);
     } catch (err) {
       alert('Error uploading file: ' + err.message);
@@ -441,6 +451,52 @@ export default function STTTrainingReport() {
       setAbattoirList(prev => ({ ...prev, custom: prev.custom.filter(c => c.id !== id) }));
       if (abattoirList.custom.find(c => c.id === id)?.name === uploadAbattoir) setUploadAbattoir('');
     } catch {}
+  };
+
+  // ── Facilitator management ──
+  const loadFacilitators = async () => {
+    try {
+      const res = await fetch('/api/facilitators');
+      if (!res.ok) return;
+      const data = await res.json();
+      setFacilitatorList(data.facilitators || []);
+    } catch {}
+  };
+
+  const handleAddFacilitator = async () => {
+    if (!newFacName.trim()) return;
+    setAddingFac(true);
+    setFacError('');
+    try {
+      const res = await fetch('/api/facilitators', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newFacName.trim(), surname: newFacSurname.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed');
+      setFacilitatorList(prev => [...prev, { id: data.id, name: data.name, surname: data.surname }].sort((a, b) => `${a.name} ${a.surname}`.localeCompare(`${b.name} ${b.surname}`)));
+      setNewFacName('');
+      setNewFacSurname('');
+    } catch (e) {
+      setFacError(e.message);
+    }
+    setAddingFac(false);
+  };
+
+  const handleDeleteFacilitator = async (id) => {
+    try {
+      await fetch(`/api/facilitators/${id}`, { method: 'DELETE' });
+      setFacilitatorList(prev => prev.filter(f => f.id !== id));
+    } catch {}
+  };
+
+  const openFacilitatorModal = () => {
+    loadFacilitators();
+    setNewFacName('');
+    setNewFacSurname('');
+    setFacError('');
+    setShowFacilitatorModal(true);
   };
 
   const handleUploadRowEdit = (idx, field, value) => {
@@ -531,6 +587,7 @@ export default function STTTrainingReport() {
         formData.append('file', uploadFile);
         formData.append('province', uploadProvince);
         formData.append('abattoir', uploadAbattoir);
+        formData.append('training_date', uploadDateStart);
         try {
           const pdfRes = await fetch('/api/stt-training-report/export-pdf', { method: 'POST', body: formData });
           if (!pdfRes.ok) {
@@ -642,13 +699,14 @@ export default function STTTrainingReport() {
                 const next = modes[(modes.indexOf(idCheck) + 1) % modes.length];
                 setIdCheck(next); setPage(1);
               }}
-              style={idCheck ? s.btnIdCheckActive : s.btnRefresh}
+              style={idCheck ? s.btnIdCheckActive : s.btnIdCheck}
             >
               {idCheck === 'duplicate' ? 'Duplicate IDs' : idCheck === 'incorrect' ? 'Incorrect IDs' : idCheck === 'missing' ? 'Missing IDs' : 'ID Check'}
             </button>
+            <button onClick={openFacilitatorModal} style={s.btnFacilitator}>Facilitators</button>
             <button onClick={exportExcel} style={s.btnExport}>Export Excel</button>
             <button onClick={() => navigate('/training-report/stt/breakdown')} style={s.btnReport}>📊 Breakdown Report</button>
-            <button onClick={() => setShowAuditLog(true)} style={s.btnRefresh}>Change Log</button>
+            <button onClick={() => setShowAuditLog(true)} style={s.btnChangeLog}>Change Log</button>
             <button onClick={() => loadRows(page, appliedFilters)} style={s.btnRefresh}>Refresh</button>
             <ColVisibilityPanel columns={COLUMNS} hiddenCols={hiddenCols} onToggle={toggleCol} columnOrder={colOrder} onReorder={reorderCols} />
           </div>
@@ -736,6 +794,22 @@ export default function STTTrainingReport() {
                           </td>
                         );
                       }
+                      if (col.dynamic === 'facilitator') {
+                        const facOpts = facilitatorList.map(f => `${f.name} ${f.surname}`.trim());
+                        return (
+                          <td key={col.key} title={val} style={{ ...s.td, minWidth: col.w, maxWidth: col.w }}>
+                            <select
+                              style={s.cellSelect}
+                              value={val}
+                              onChange={e => editCell(row.id, col.key, e.target.value, row)}
+                            >
+                              <option value="">{''}</option>
+                              {facOpts.map(o => <option key={o} value={o}>{o}</option>)}
+                              {val && !facOpts.includes(val) && <option value={val}>{val}</option>}
+                            </select>
+                          </td>
+                        );
+                      }
                       if (col.opts) {
                         return (
                           <td key={col.key} title={val} style={{ ...s.td, minWidth: col.w, maxWidth: col.w }}>
@@ -792,7 +866,19 @@ export default function STTTrainingReport() {
               {COLUMNS.filter(c => !c.readonly && !MODAL_EXCLUDE.has(c.key)).map(col => (
                 <div key={col.key} style={s.modalField}>
                   <label style={s.modalLabel}>{col.label}</label>
-                  {col.opts ? (
+                  {col.dynamic === 'facilitator' ? (
+                    <select
+                      style={s.modalInput}
+                      value={newEntry[col.key] || ''}
+                      onChange={e => handleNewEntryChange(col.key, e.target.value)}
+                    >
+                      <option value="">-- Select Facilitator --</option>
+                      {facilitatorList.map(f => {
+                        const full = `${f.name} ${f.surname}`.trim();
+                        return <option key={f.id} value={full}>{full}</option>;
+                      })}
+                    </select>
+                  ) : col.opts ? (
                     <select
                       style={s.modalInput}
                       value={newEntry[col.key] || ''}
@@ -932,7 +1018,16 @@ export default function STTTrainingReport() {
                     {/* Facilitator */}
                     <div>
                       <label style={su.label}>Facilitator <span style={{ color: '#d13438' }}>*</span></label>
-                      <input type="text" value={uploadFacilitator} onChange={e => setUploadFacilitator(e.target.value)} style={su.input} placeholder="Full name" />
+                      <select value={uploadFacilitator} onChange={e => setUploadFacilitator(e.target.value)} style={su.select}>
+                        <option value="">— Select facilitator —</option>
+                        {facilitatorList.map(f => {
+                          const full = `${f.name} ${f.surname}`.trim();
+                          return <option key={f.id} value={full}>{full}</option>;
+                        })}
+                        {uploadFacilitator && !facilitatorList.some(f => `${f.name} ${f.surname}`.trim() === uploadFacilitator) && (
+                          <option value={uploadFacilitator}>{uploadFacilitator} (from Excel)</option>
+                        )}
+                      </select>
                     </div>
 
                     {/* Contact */}
@@ -1040,6 +1135,74 @@ export default function STTTrainingReport() {
         </div>
       )}
 
+      {/* ── Facilitator Management Modal ── */}
+      {showFacilitatorModal && (
+        <div style={s.modalOverlay} onClick={() => setShowFacilitatorModal(false)}>
+          <div style={{ ...s.modalBox, maxWidth: '560px' }} onClick={e => e.stopPropagation()}>
+            <div style={s.modalHeader}>
+              <h2 style={s.modalTitle}>Manage Facilitators</h2>
+              <button onClick={() => setShowFacilitatorModal(false)} style={s.modalClose}>✕</button>
+            </div>
+            <div style={{ padding: '18px 24px', overflowY: 'auto', flex: 1 }}>
+              {/* Add new */}
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', alignItems: 'flex-end' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#323130', display: 'block', marginBottom: '3px' }}>Name</label>
+                  <input value={newFacName} onChange={e => setNewFacName(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddFacilitator()}
+                    placeholder="First name" style={{ ...su.input, margin: 0 }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#323130', display: 'block', marginBottom: '3px' }}>Surname</label>
+                  <input value={newFacSurname} onChange={e => setNewFacSurname(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleAddFacilitator()}
+                    placeholder="Surname" style={{ ...su.input, margin: 0 }} />
+                </div>
+                <button onClick={handleAddFacilitator} disabled={addingFac || !newFacName.trim()}
+                  style={{ ...s.btnAdd, padding: '7px 16px', flexShrink: 0, opacity: !newFacName.trim() ? 0.5 : 1 }}>
+                  {addingFac ? '...' : '+ Add'}
+                </button>
+              </div>
+              {facError && <div style={{ ...s.errorMsg, marginBottom: '12px' }}>{facError}</div>}
+
+              {/* List */}
+              {facilitatorList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px', color: '#605e5c', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                  No facilitators added yet.
+                </div>
+              ) : (
+                <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: '0.82rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ background: '#0078d4', color: '#fff', padding: '7px 12px', textAlign: 'left', fontWeight: 600 }}>Name</th>
+                      <th style={{ background: '#0078d4', color: '#fff', padding: '7px 12px', textAlign: 'left', fontWeight: 600 }}>Surname</th>
+                      <th style={{ background: '#0078d4', color: '#fff', padding: '7px 12px', textAlign: 'center', fontWeight: 600, width: '70px' }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {facilitatorList.map((f, i) => (
+                      <tr key={f.id} style={{ background: i % 2 === 0 ? '#fff' : '#faf9f8' }}>
+                        <td style={{ padding: '6px 12px', borderBottom: '1px solid #edebe9', fontWeight: 500, color: '#323130' }}>{f.name}</td>
+                        <td style={{ padding: '6px 12px', borderBottom: '1px solid #edebe9', color: '#323130' }}>{f.surname || '—'}</td>
+                        <td style={{ padding: '6px 12px', borderBottom: '1px solid #edebe9', textAlign: 'center' }}>
+                          <button onClick={() => handleDeleteFacilitator(f.id)}
+                            style={{ background: 'none', border: '1px solid #fde7e9', color: '#a4262c', borderRadius: '2px', padding: '2px 8px', cursor: 'pointer', fontSize: '0.72rem', fontWeight: 600, width: 'auto' }}>
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div style={s.modalFooter}>
+              <button onClick={() => setShowFacilitatorModal(false)} style={s.btnSaveModal}>Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── History Modal ── */}
       {historyRow && (
         <div style={s.modalOverlay} onClick={() => setHistoryRow(null)}>
@@ -1137,7 +1300,7 @@ const s = {
   metaChip:    { fontSize: '0.75rem', padding: '3px 10px', borderRadius: '2px', background: '#f3f2f1', border: '1px solid #edebe9', color: '#323130' },
   btnImport:   { background: '#0078d4', border: 'none', color: '#ffffff', borderRadius: '2px', padding: '7px 16px', cursor: 'pointer', fontWeight: 600, fontSize: '0.85rem', width: 'auto' },
   btnImportSmall:{ background: '#ffffff', border: '1px solid #0078d4', color: '#0078d4', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto' },
-  btnRefresh:  { background: '#ffffff', border: '1px solid #8a8886', color: '#323130', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
+  btnRefresh:  { background: '#605e5c', border: '1px solid #605e5c', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   btnExport:   { background: '#0078d4', border: '1px solid #0078d4', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   errorMsg:    { color: '#a4262c', fontSize: '0.85rem', background: '#fde7e9', border: '1px solid #f1707b', borderRadius: '2px', padding: '9px 14px' },
   pagination:  { display: 'flex', alignItems: 'center', gap: '6px' },
@@ -1161,7 +1324,10 @@ const s = {
   btnHistory:  { background: 'transparent', border: '1px solid #c8c6c4', color: '#0078d4', borderRadius: '2px', padding: '2px 6px', cursor: 'pointer', fontSize: '0.6rem', whiteSpace: 'nowrap' },
   btnAdd:      { background: '#107c10', border: '1px solid #107c10', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   btnUpload:   { background: '#5c2d91', border: '1px solid #5c2d91', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
+  btnIdCheck:  { background: '#986f0b', border: '1px solid #986f0b', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   btnIdCheckActive:{ background: '#fff4ce', border: '1px solid #f7c948', color: '#8a6914', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, width: 'auto', lineHeight: 1 },
+  btnFacilitator:{ background: '#8764b8', border: '1px solid #8764b8', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
+  btnChangeLog:{ background: '#008272', border: '1px solid #008272', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   btnReport:   { background: '#2e4b8a', border: '1px solid #2e4b8a', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   btnSaveModal:{ background: '#0078d4', border: 'none', color: '#ffffff', borderRadius: '2px', padding: '8px 24px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', width: 'auto' },
   // Modal

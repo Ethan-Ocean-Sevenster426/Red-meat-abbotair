@@ -17,6 +17,7 @@ from pathlib import Path
 from django.conf import settings
 from django.db import connection
 from django.http import FileResponse
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django.utils import timezone
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework.parsers import MultiPartParser, FormParser
@@ -31,6 +32,8 @@ from .column_maps import (
     ASSOCIATED_COLS, ASSOCIATED_BRACKETS,
     STT_COLS, STT_BRACKETS,
     TRAINING_COLS, TRAINING_BRACKETS,
+    LEARNER_COLS, LEARNER_BRACKETS,
+    FEE_STRUCTURE_COLS, FEE_STRUCTURE_BRACKETS,
     RESIDUE_ALL_COLS, RESIDUE_INSERT_COLS, RESIDUE_HEADER_MAP,
     AUDIT_NAME_JOIN,
 )
@@ -41,7 +44,7 @@ from .helpers import (
 from .models import (
     AbattoirMaster, TransformationMaster, GovernmentMaster, IndustryMaster,
     AssociatedMembersMaster, STTTrainingReport, TrainingReport,
-    CustomAbattoir, User, Invitation, UserColumnPreferences,
+    CustomAbattoir, Facilitator, FeeStructure, Learner, User, Invitation, UserColumnPreferences,
 )
 
 
@@ -324,7 +327,7 @@ def audit_log_view(request):
         c.execute(f'SELECT COUNT(*) FROM AuditLog a {name_join} {where_sql}', params)
         total = c.fetchone()[0]
         c.execute(
-            f"""SELECT a.id, a.table_name, a.record_id {name_select},
+            f"""SELECT a.id, a.table_name, a.record_id, a.action_type {name_select},
                        a.modified_by, a.modified_time, a.modified_fields,
                        a.old_values, a.new_values, a.created_at
                 FROM AuditLog a {name_join} {where_sql}
@@ -390,6 +393,16 @@ training_views = build_master_crud(
 stt_views = build_master_crud(
     STTTrainingReport, columns=STT_COLS, bracket_cols=STT_BRACKETS,
     audit_table='STTTrainingReport',
+)
+
+learner_views = build_master_crud(
+    Learner, columns=LEARNER_COLS, bracket_cols=LEARNER_BRACKETS,
+    audit_table='Learners',
+)
+
+fee_structure_views = build_master_crud(
+    FeeStructure, columns=FEE_STRUCTURE_COLS, bracket_cols=FEE_STRUCTURE_BRACKETS,
+    audit_table='FeeStructure',
 )
 
 
@@ -600,6 +613,219 @@ def stt_list_create_view(request):
     return Response({'total': total, 'page': page, 'pageSize': page_size, 'rows': rows})
 
 
+@api_view(['GET', 'POST'])
+def learner_list_create_view(request):
+    """Custom list for Learners with _idCheck support."""
+    if request.method == 'POST':
+        return learner_views['list_create'](request._request)
+
+    try:
+        page = max(1, int(request.query_params.get('page') or '1'))
+        page_size = min(200, int(request.query_params.get('size') or '50'))
+    except ValueError:
+        page, page_size = 1, 50
+    offset = (page - 1) * page_size
+
+    vendor = connection.vendor
+    length_fn = 'LENGTH' if vendor == 'sqlite' else 'CHAR_LENGTH'
+    reserved = {'page', 'size', 'sortCol', 'sortDir', '_idCheck'}
+    where_parts, params = apply_column_filters(
+        request.query_params.dict(), LEARNER_COLS, LEARNER_BRACKETS, reserved,
+    )
+
+    id_check = request.query_params.get('_idCheck') or ''
+    if id_check == 'duplicate':
+        where_parts.append(
+            "id_number IN (SELECT id_number FROM Learners "
+            "WHERE id_number IS NOT NULL AND id_number <> '' "
+            "GROUP BY id_number HAVING COUNT(*) > 1)"
+        )
+    elif id_check == 'incorrect':
+        where_parts.append(
+            f"id_number IS NOT NULL AND id_number <> '' AND {length_fn}(id_number) <> 13"
+        )
+    elif id_check == 'missing':
+        where_parts.append("(id_number IS NULL OR id_number = '')")
+
+    where_sql = ('WHERE ' + ' AND '.join(where_parts)) if where_parts else ''
+
+    sort_col_raw = request.query_params.get('sortCol') or ''
+    sort_col = sort_col_raw if sort_col_raw in LEARNER_COLS else 'id'
+    sort_dir = 'DESC' if request.query_params.get('sortDir') == 'desc' else 'ASC'
+
+    with connection.cursor() as c:
+        c.execute(f'SELECT COUNT(*) FROM Learners {where_sql}', params)
+        total = c.fetchone()[0]
+        c.execute(
+            f'SELECT * FROM Learners {where_sql} ORDER BY {sort_col} {sort_dir} '
+            f'LIMIT %s OFFSET %s',
+            params + [page_size, offset],
+        )
+        rows = rows_to_dicts(c)
+    return Response({'total': total, 'page': page, 'pageSize': page_size, 'rows': rows})
+
+
+@api_view(['POST'])
+def learner_merge_view(request):
+    """Merge two learners: keep primary, combine work_stations, delete secondary."""
+    primary_id = request.data.get('primary_id')
+    secondary_id = request.data.get('secondary_id')
+    merged_by = request.data.get('modified_by') or ''
+
+    if not primary_id or not secondary_id or primary_id == secondary_id:
+        return Response({'message': 'Two different learner IDs are required.'}, status=400)
+
+    with connection.cursor() as c:
+        c.execute('SELECT * FROM Learners WHERE id = %s', [primary_id])
+        primary = rows_to_dicts(c)
+        c.execute('SELECT * FROM Learners WHERE id = %s', [secondary_id])
+        secondary = rows_to_dicts(c)
+
+    if not primary or not secondary:
+        return Response({'message': 'One or both learners not found.'}, status=404)
+
+    primary = primary[0]
+    secondary = secondary[0]
+
+    # Combine work stations
+    ws_primary = set(filter(None, (primary.get('work_stations') or '').split(', ')))
+    ws_secondary = set(filter(None, (secondary.get('work_stations') or '').split(', ')))
+    combined_ws = ', '.join(sorted(ws_primary | ws_secondary))
+
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
+    # Update primary with combined work stations
+    with connection.cursor() as c:
+        c.execute(
+            'UPDATE Learners SET work_stations = %s, modified_by = %s, modified_time = %s WHERE id = %s',
+            [combined_ws, merged_by, now, primary_id],
+        )
+
+    # Log the merge on the primary record
+    append_audit_log('Learners', int(primary_id), {
+        'modified_by': merged_by,
+        'modified_time': now,
+        'modified_fields': f'Merged with learner #{secondary_id}',
+        'old_values': json.dumps({
+            'work_stations': primary.get('work_stations') or '',
+        }),
+        'new_values': json.dumps({
+            'work_stations': combined_ws,
+            'merged_from': f"#{secondary_id} {secondary.get('name') or ''} {secondary.get('surname') or ''} ({secondary.get('id_number') or 'no ID'})".strip(),
+        }),
+    }, action_type='EDIT')
+
+    # Log the deletion of the secondary
+    skip = {'id', 'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values'}
+    old_data = {k: str(v) for k, v in secondary.items() if k not in skip and v is not None and str(v).strip()}
+    append_audit_log('Learners', int(secondary_id), {
+        'modified_by': merged_by,
+        'modified_time': now,
+        'modified_fields': ','.join(old_data.keys()) if old_data else 'merged into #' + str(primary_id),
+        'old_values': json.dumps(old_data) if old_data else '',
+        'new_values': f'Merged into learner #{primary_id}',
+    }, action_type='DELETE')
+
+    # Delete secondary
+    with connection.cursor() as c:
+        c.execute('DELETE FROM Learners WHERE id = %s', [secondary_id])
+
+    return Response({'ok': True, 'work_stations': combined_ws})
+
+
+@api_view(['GET'])
+def stt_learner_summary_view(request):
+    """Consolidated learner view — one row per person, work stations aggregated."""
+    try:
+        page = max(1, int(request.query_params.get('page') or '1'))
+        page_size = min(200, int(request.query_params.get('size') or '50'))
+    except ValueError:
+        page, page_size = 1, 50
+    offset = (page - 1) * page_size
+
+    vendor = connection.vendor
+    length_fn = 'LENGTH' if vendor == 'sqlite' else 'CHAR_LENGTH'
+    group_concat = 'GROUP_CONCAT(DISTINCT work_station)' if vendor == 'sqlite' else "GROUP_CONCAT(DISTINCT work_station SEPARATOR ', ')"
+
+    where_parts = []
+    params = []
+
+    # Column filters
+    filterable = {'name', 'surname', 'id_number', 'year_of_birth', 'age', 'citizen', 'race_gender'}
+    reserved = {'page', 'size', 'sortCol', 'sortDir', '_idCheck'}
+    for key, val in request.query_params.dict().items():
+        if key in reserved or key not in filterable:
+            continue
+        v = (val or '').strip()
+        if not v:
+            continue
+        if v == '__blank__':
+            where_parts.append(f"({key} = '' OR {key} IS NULL)")
+        else:
+            where_parts.append(f"{key} LIKE %s")
+            params.append(f'%{v}%')
+
+    # ID check (no duplicate — only incorrect and missing)
+    id_check = request.query_params.get('_idCheck') or ''
+    if id_check == 'incorrect':
+        where_parts.append(
+            f"id_number IS NOT NULL AND id_number <> '' AND {length_fn}(id_number) <> 13"
+        )
+    elif id_check == 'missing':
+        where_parts.append("(id_number IS NULL OR id_number = '')")
+
+    where_sql = ('WHERE ' + ' AND '.join(where_parts)) if where_parts else ''
+
+    # Sort
+    sort_col_raw = request.query_params.get('sortCol') or ''
+    valid_sort = {'name', 'surname', 'id_number', 'year_of_birth', 'age', 'citizen', 'race_gender', 'work_stations', 'times_trained'}
+    sort_col = sort_col_raw if sort_col_raw in valid_sort else 'surname'
+    sort_dir = 'DESC' if request.query_params.get('sortDir') == 'desc' else 'ASC'
+
+    # Subquery to consolidate learners
+    inner_sql = f"""
+        SELECT
+          name, surname, id_number,
+          MAX(year_of_birth) AS year_of_birth,
+          MAX(age) AS age,
+          MAX(citizen) AS citizen,
+          MAX(race_gender) AS race_gender,
+          {group_concat} AS work_stations,
+          COUNT(*) AS times_trained
+        FROM STTTrainingReport
+        {where_sql}
+        GROUP BY name, surname, id_number
+    """
+
+    with connection.cursor() as c:
+        # Total count
+        c.execute(f"SELECT COUNT(*) FROM ({inner_sql}) AS sub", params)
+        total = c.fetchone()[0]
+
+        # Paginated data
+        c.execute(
+            f"{inner_sql} ORDER BY {sort_col} {sort_dir} LIMIT %s OFFSET %s",
+            params + [page_size, offset],
+        )
+        rows = rows_to_dicts(c)
+
+    return Response({'total': total, 'page': page, 'pageSize': page_size, 'rows': rows})
+
+
+@api_view(['GET'])
+def stt_learner_summary_count_view(request):
+    vendor = connection.vendor
+    with connection.cursor() as c:
+        c.execute(
+            "SELECT COUNT(*) FROM ("
+            "  SELECT name, surname, id_number FROM STTTrainingReport"
+            "  GROUP BY name, surname, id_number"
+            ") AS sub"
+        )
+        n = c.fetchone()[0]
+    return Response({'count': n})
+
+
 @api_view(['POST'])
 @parser_classes([MultiPartParser, FormParser])
 def stt_parse_excel_view(request):
@@ -679,8 +905,13 @@ def stt_export_pdf_view(request):
 
     province = sanitize_fs_name(request.data.get('province') or 'Unknown Province')
     abattoir = sanitize_fs_name(request.data.get('abattoir') or 'Unknown Abattoir')
-    now = datetime.now()
-    folder_name = f"STT Training {now.day:02d}-{now.month:02d}-{now.year} {abattoir}"
+    training_date_raw = request.data.get('training_date') or ''
+    # Parse training start date (YYYY-MM-DD from frontend date input)
+    try:
+        td = datetime.strptime(training_date_raw, '%Y-%m-%d')
+    except (ValueError, TypeError):
+        td = datetime.now()
+    folder_name = f"STT Training {td.day:02d}-{td.month:02d}-{td.year} {abattoir}"
     save_dir = settings.DOCUMENTS_ROOT / province / abattoir / 'STT Training Documents' / folder_name
     save_dir.mkdir(parents=True, exist_ok=True)
     (save_dir / f'{folder_name}.xlsx').write_bytes(xlsx_buf)
@@ -1026,29 +1257,87 @@ def quotation_generate_view(request):
         set_merged(15, data.get('streetAddress') or '')
         set_merged(16, data.get('rmaaContact') or '')
 
+        def safe_float(v):
+            try: return float(v) if v else ''
+            except (ValueError, TypeError): return ''
+
+        # Line items (B22-H26, up to 5 lines)
         items = data.get('lineItems') or []
         for i, item in enumerate(items):
             row = 22 + i
-            if row > 24:
+            if row > 26:
                 break
+            # B: Date in long format
             try:
                 d = datetime.fromisoformat(item.get('date')) if item.get('date') else None
                 ws[f'B{row}'] = d.strftime('%A, %B %d, %Y') if d else ''
             except (ValueError, TypeError):
                 ws[f'B{row}'] = item.get('date') or ''
+            # C: Skills Programme x Qty
             skill = item.get('skillsProgramme') or ''
             qty = item.get('qty') or ''
             ws[f'C{row}'] = f"{skill} x {qty}" if skill and qty else skill
-            ws[f'D{row}'] = item.get('slaughterTechnique') or ''
-            ws[f'E{row}'] = float(item['serviceCost']) if item.get('serviceCost') else ''
-            ws[f'F{row}'] = float(item['distance']) if item.get('distance') else ''
-            ws[f'G{row}'] = float(item['accommodation']) if item.get('accommodation') else ''
+            # D: Skills Programme cost
+            pc = safe_float(item.get('programmeCost'))
+            pq = int(item.get('qty') or 1) if item.get('qty') else 1
+            ws[f'D{row}'] = pc * pq if isinstance(pc, float) else ''
+            # E: Slaughter Technique x Qty
+            slaught = item.get('slaughterTechnique') or ''
+            sq = item.get('slaughterQty') or ''
+            ws[f'E{row}'] = f"{slaught} x {sq}" if slaught and sq else slaught
+            # F: Slaughter cost
+            sc = safe_float(item.get('slaughterCost'))
+            sqn = int(item.get('slaughterQty') or 1) if item.get('slaughterQty') else 1
+            ws[f'F{row}'] = sc * sqn if isinstance(sc, float) else ''
+            # G: Distance
+            ws[f'G{row}'] = safe_float(item.get('distance'))
+            # H: Accommodation
+            ws[f'H{row}'] = safe_float(item.get('accommodation'))
+
+        # Sampling (row 29)
+        samp = data.get('sampling') or {}
+        samp_qty = samp.get('qty') or ''
+        samp_cost = safe_float(samp.get('cost'))
+        if samp_qty:
+            ws['B29'] = f"Sampling x {samp_qty}"
+            ws['F29'] = samp_cost * int(samp_qty) if isinstance(samp_cost, float) else ''
+            ws['G29'] = safe_float(samp.get('distance'))
+            ws['H29'] = safe_float(samp.get('accommodation'))
+
+        # Audit Verification (row 30)
+        aud = data.get('audit') or {}
+        aud_qty = aud.get('qty') or ''
+        aud_cost = safe_float(aud.get('cost'))
+        if aud_qty:
+            ws['B30'] = f"Verification Audit x {aud_qty}"
+            ws['F30'] = aud_cost * int(aud_qty) if isinstance(aud_cost, float) else ''
+            ws['G30'] = safe_float(aud.get('distance'))
+            ws['H30'] = safe_float(aud.get('accommodation'))
+
+        # Discount lines (rows 34-37) — only if discounts provided
+        disc = data.get('discounts')
+        if disc:
+            disc_rows = [
+                (34, 'Skills Program', 'skillsAmount', 'skillsKm', 'skillsAccomm'),
+                (35, 'Sampling', 'samplingAmount', 'samplingKm', 'samplingAccomm'),
+                (36, 'Verification Audit', 'auditAmount', 'auditKm', 'auditAccomm'),
+                (37, 'Membership', 'membershipAmount', 'membershipKm', 'membershipAccomm'),
+            ]
+            for row, label, amt_key, km_key, acc_key in disc_rows:
+                amt = safe_float(disc.get(amt_key))
+                km = safe_float(disc.get(km_key))
+                acc = safe_float(disc.get(acc_key))
+                if amt or km or acc:
+                    ws[f'D{row}'] = label
+                    ws[f'F{row}'] = -abs(amt) if isinstance(amt, float) else ''
+                    ws[f'G{row}'] = -abs(km) if isinstance(km, float) else ''
+                    ws[f'H{row}'] = -abs(acc) if isinstance(acc, float) else ''
 
         xlsx_buf = BytesIO()
         wb.save(xlsx_buf)
         xlsx_bytes = xlsx_buf.getvalue()
 
-        pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes)
+        pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$45')
         folder = f"Quotation {date_str.replace('/', '-')} {sanitize_fs_name(data.get('clientName'))}"
         return Response({
             'ok': True,
@@ -1070,8 +1359,9 @@ def quotation_send_view(request):
     pdf_b64 = data.get('pdfBase64')
     if not to or not pdf_b64:
         return Response({'message': 'Missing email or PDF'}, status=400)
+    cc_list = data.get('cc') or []
     result = email_svc.send_quotation_email(
-        to=to, client_name=data.get('clientName') or '',
+        to=to, cc=cc_list, client_name=data.get('clientName') or '',
         pdf_base64=pdf_b64, file_name=data.get('fileName') or 'Quotation.pdf',
     )
     if not result['ok']:
@@ -1169,6 +1459,7 @@ def documents_view_view(request):
         resp['Content-Disposition'] = f'attachment; filename="{abs_path.name}"'
     else:
         resp['Content-Disposition'] = 'inline'
+    resp['X-Frame-Options'] = 'SAMEORIGIN'
     return resp
 
 
@@ -1206,4 +1497,34 @@ def documents_delete_view(request):
         except OSError:
             break
         parent = parent.parent
+    return Response({'ok': True})
+
+
+# ===========================================================================
+#  facilitators
+# ===========================================================================
+@api_view(['GET', 'POST'])
+def facilitators_view(request):
+    if request.method == 'POST':
+        name = (request.data.get('name') or '').strip()
+        surname = (request.data.get('surname') or '').strip()
+        if not name:
+            return Response({'message': 'Name is required.'}, status=400)
+        if Facilitator.objects.filter(name=name, surname=surname).exists():
+            return Response({'message': 'Facilitator already exists.'}, status=400)
+        f = Facilitator.objects.create(name=name, surname=surname)
+        return Response({'ok': True, 'id': f.id, 'name': f.name, 'surname': f.surname})
+    # GET — list all
+    facilitators = list(
+        Facilitator.objects.order_by('name', 'surname').values('id', 'name', 'surname')
+    )
+    return Response({'facilitators': facilitators})
+
+
+@api_view(['DELETE'])
+def facilitator_delete_view(request, pk):
+    try:
+        Facilitator.objects.filter(id=pk).delete()
+    except Exception as e:
+        return Response({'message': str(e)}, status=500)
     return Response({'ok': True})

@@ -9,6 +9,12 @@ const sections = [
     path: '/training-report/stt',
   },
   {
+    title: 'Learner Summary',
+    description: 'Consolidated view of all trained learners and their work stations.',
+    icon: '👤',
+    path: '/training-report/learner-summary',
+  },
+  {
     title: 'Formal Training Report',
     description: 'Formal training records and reporting data.',
     icon: '📝',

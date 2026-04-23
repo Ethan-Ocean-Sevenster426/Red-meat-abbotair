@@ -63,18 +63,23 @@ def safe_col_ref(col: str, bracket_cols: set[str]) -> str:
     return col
 
 
-def append_audit_log(table: str, record_id: int, row: dict):
-    """Insert an AuditLog entry if the row has a modified_fields payload."""
-    if not row.get('modified_fields'):
+def append_audit_log(table: str, record_id: int, row: dict, action_type: str = 'EDIT'):
+    """Insert an AuditLog entry.
+
+    For EDIT: only logs if modified_fields is present.
+    For ADD/DELETE: always logs.
+    """
+    if action_type == 'EDIT' and not row.get('modified_fields'):
         return
     with connection.cursor() as c:
         c.execute(
             """INSERT INTO AuditLog
-               (table_name, record_id, modified_by, modified_time, modified_fields, old_values, new_values, created_at)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+               (table_name, record_id, action_type, modified_by, modified_time, modified_fields, old_values, new_values, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             [
                 table,
                 record_id,
+                action_type,
                 str(row.get('modified_by') or ''),
                 str(row.get('modified_time') or ''),
                 json_field(row.get('modified_fields')),
@@ -143,7 +148,7 @@ def build_master_crud(
     @api_view(['GET', 'POST'])
     def list_create(request):
         if request.method == 'POST':
-            return _create(request, model, columns, bracket_cols)
+            return _create(request, model, columns, bracket_cols, audit_table or tbl)
         return _list(request, model, columns, bracket_cols, reserved)
 
     @api_view(['GET'])
@@ -158,7 +163,7 @@ def build_master_crud(
         if request.method in ('PUT', 'PATCH'):
             return _update(request, model, columns, bracket_cols, pk, audit_table or tbl)
         if request.method == 'DELETE':
-            return _delete(model, pk)
+            return _delete(model, pk, audit_table or tbl, request)
         # GET single (not commonly used by frontend but useful)
         with connection.cursor() as c:
             c.execute(f'SELECT * FROM {tbl} WHERE id = %s', [pk])
@@ -171,7 +176,7 @@ def build_master_crud(
     def history(request, pk: int):
         with connection.cursor() as c:
             c.execute(
-                """SELECT id, modified_by, modified_time, modified_fields,
+                """SELECT id, action_type, modified_by, modified_time, modified_fields,
                           old_values, new_values, created_at
                    FROM AuditLog
                    WHERE table_name = %s AND record_id = %s
@@ -220,7 +225,7 @@ def _list(request, model, columns, bracket_cols, reserved):
     return Response({'total': total, 'page': page, 'pageSize': page_size, 'rows': rows})
 
 
-def _create(request, model, columns, bracket_cols):
+def _create(request, model, columns, bracket_cols, audit_table=None):
     row = request.data or {}
     tbl = model._meta.db_table
     col_refs = [safe_col_ref(c, bracket_cols) for c in columns]
@@ -231,6 +236,19 @@ def _create(request, model, columns, bracket_cols):
         c.execute(sql, values)
         c.execute('SELECT LAST_INSERT_ID()' if connection.vendor == 'mysql' else 'SELECT last_insert_rowid()')
         new_id = c.fetchone()[0]
+
+    # Log ADD to audit trail
+    audit_cols = [c for c in columns if c not in ('modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values')]
+    non_empty = {c: str(row.get(c, '') or '') for c in audit_cols if str(row.get(c, '') or '').strip()}
+    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    append_audit_log(audit_table or tbl, new_id, {
+        'modified_by': str(row.get('modified_by') or ''),
+        'modified_time': now,
+        'modified_fields': ','.join(non_empty.keys()) if non_empty else 'new record',
+        'old_values': '',
+        'new_values': json.dumps(non_empty, default=str) if non_empty else '',
+    }, action_type='ADD')
+
     return Response({'ok': True, 'id': new_id})
 
 
@@ -245,8 +263,33 @@ def _update(request, model, columns, bracket_cols, pk, audit_table):
     return Response({'ok': True})
 
 
-def _delete(model, pk):
+def _delete(model, pk, audit_table=None, request=None):
     tbl = model._meta.db_table
+    # Fetch the row before deleting so we can log it
+    with connection.cursor() as c:
+        c.execute(f'SELECT * FROM {tbl} WHERE id = %s', [pk])
+        existing = rows_to_dicts(c)
+
+    if existing:
+        old_row = existing[0]
+        # Filter out audit/system columns for cleaner logging
+        skip = {'id', 'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values'}
+        old_data = {k: str(v) for k, v in old_row.items() if k not in skip and v is not None and str(v).strip()}
+        # Get the user who performed the delete from the request
+        deleted_by = ''
+        if request and request.data:
+            deleted_by = str(request.data.get('modified_by', '') or '')
+        if not deleted_by and request:
+            deleted_by = str(request.query_params.get('user', '') or '')
+        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        append_audit_log(audit_table or tbl, pk, {
+            'modified_by': deleted_by,
+            'modified_time': now,
+            'modified_fields': ','.join(old_data.keys()) if old_data else 'record deleted',
+            'old_values': json.dumps(old_data, default=str) if old_data else '',
+            'new_values': '',
+        }, action_type='DELETE')
+
     with connection.cursor() as c:
         c.execute(f'DELETE FROM {tbl} WHERE id = %s', [pk])
     return Response({'ok': True})

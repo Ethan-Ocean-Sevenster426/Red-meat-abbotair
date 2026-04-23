@@ -445,6 +445,7 @@ class ResidueMonitoring(_ResidueBase):
 class AuditLog(models.Model):
     table_name = models.CharField(max_length=100)
     record_id = models.IntegerField()
+    action_type = models.CharField(max_length=10, default='EDIT')  # ADD, EDIT, DELETE
     modified_by = models.CharField(max_length=500, null=True, blank=True)
     modified_time = models.CharField(max_length=100, null=True, blank=True)
     modified_fields = models.TextField(null=True, blank=True)
@@ -474,3 +475,39 @@ class CustomAbattoir(models.Model):
 
     class Meta:
         db_table = 'CustomAbattoirs'
+
+
+class Learner(AuditFieldsMixin):
+    name = models.CharField(max_length=255, null=True, blank=True)
+    surname = models.CharField(max_length=255, null=True, blank=True)
+    id_number = models.CharField(max_length=255, null=True, blank=True)
+    year_of_birth = models.CharField(max_length=50, null=True, blank=True)
+    age = models.CharField(max_length=50, null=True, blank=True)
+    citizen = models.CharField(max_length=255, null=True, blank=True)
+    race_gender = models.CharField(max_length=255, null=True, blank=True)
+    work_stations = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'Learners'
+
+
+class FeeStructure(AuditFieldsMixin):
+    category = models.CharField(max_length=255)
+    description = models.TextField()
+    days = models.CharField(max_length=100, null=True, blank=True)
+    rmaa_members = models.CharField(max_length=100, null=True, blank=True)
+    non_members = models.CharField(max_length=100, null=True, blank=True)
+    sort_order = models.IntegerField(default=0)
+
+    class Meta:
+        db_table = 'FeeStructure'
+        ordering = ['sort_order']
+
+
+class Facilitator(models.Model):
+    name = models.CharField(max_length=255)
+    surname = models.CharField(max_length=255, default='')
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+
+    class Meta:
+        db_table = 'Facilitators'

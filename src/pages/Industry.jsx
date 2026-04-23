@@ -266,7 +266,7 @@ export default function Industry() {
     if (!confirm('Are you sure you want to delete this entry?')) return;
     setDeleting(prev => ({ ...prev, [rowId]: true }));
     try {
-      const res = await fetch(`/api/industry/${rowId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/industry/${rowId}?user=${encodeURIComponent(user?.displayName || user?.username || '')}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
       setRows(prev => prev.filter(r => r.id !== rowId));

@@ -140,7 +140,7 @@ export default function AuditLogModal({ tableName, title, onClose }) {
   const hasFilter = fUsers.length > 0 || fYears.length > 0 || fMonths.length > 0 || fDays;
   const clearAll = () => { setFUsers([]); setFYears([]); setFMonths([]); setFDays(''); setPage(1); };
 
-  const colCount = nameLabel ? 7 : 6;
+  const colCount = nameLabel ? 8 : 7;
 
   const exportExcel = async () => {
     try {
@@ -154,6 +154,7 @@ export default function AuditLogModal({ tableName, title, onClose }) {
       const data = await res.json();
       const cols = [
         { key: 'created_at', label: 'Date/Time' },
+        { key: 'action_type', label: 'Action' },
         { key: 'modified_by', label: 'User' },
         { key: 'record_id', label: 'Record ID' },
         ...(nameLabel ? [{ key: 'record_name', label: nameLabel }] : []),
@@ -163,6 +164,7 @@ export default function AuditLogModal({ tableName, title, onClose }) {
       ];
       const exportRows = (data.rows || []).map(r => ({
         created_at: fmtDate(r.created_at),
+        action_type: r.action_type || 'EDIT',
         modified_by: r.modified_by,
         record_id: r.record_id,
         record_name: r.record_name || '',
@@ -207,6 +209,7 @@ export default function AuditLogModal({ tableName, title, onClose }) {
             <thead>
               <tr>
                 <th style={{ ...s.th, minWidth: 120 }}>Date / Time</th>
+                <th style={{ ...s.th, minWidth: 70, textAlign: 'center' }}>Action</th>
                 <th style={{ ...s.th, minWidth: 110 }}>User</th>
                 <th style={{ ...s.th, minWidth: 50, textAlign: 'center' }}>ID</th>
                 {nameLabel && <th style={{ ...s.th, minWidth: 140 }}>{nameLabel}</th>}
@@ -223,9 +226,13 @@ export default function AuditLogModal({ tableName, title, onClose }) {
                   </td>
                 </tr>
               )}
-              {rows.map((row, i) => (
+              {rows.map((row, i) => {
+                const action = (row.action_type || 'EDIT').toUpperCase();
+                const actionStyle = action === 'ADD' ? s.actionAdd : action === 'DELETE' ? s.actionDelete : s.actionEdit;
+                return (
                 <tr key={row.id} style={{ background: i % 2 === 0 ? '#ffffff' : '#faf9f8' }}>
                   <td style={s.td}><span style={s.dateText}>{fmtDate(row.created_at)}</span></td>
+                  <td style={{ ...s.td, textAlign: 'center' }}><span style={actionStyle}>{action}</span></td>
                   <td style={s.td}>
                     <div style={s.userCell}>
                       <span style={s.userAvatar}>{(row.modified_by || '?')[0].toUpperCase()}</span>
@@ -241,10 +248,11 @@ export default function AuditLogModal({ tableName, title, onClose }) {
                       ))}
                     </div>
                   </td>
-                  <td style={{ ...s.td, ...s.valCol }}><div style={s.oldVal}>{row.old_values}</div></td>
-                  <td style={{ ...s.td, ...s.valCol }}><div style={s.newVal}>{row.new_values}</div></td>
+                  <td style={{ ...s.td, ...s.valCol }}><div style={action === 'DELETE' ? s.oldVal : (action === 'ADD' ? s.newVal : s.oldVal)}>{row.old_values}</div></td>
+                  <td style={{ ...s.td, ...s.valCol }}><div style={action === 'DELETE' ? s.oldVal : s.newVal}>{row.new_values}</div></td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -301,6 +309,9 @@ const s = {
   userCell:    { display: 'flex', alignItems: 'center', gap: 6 },
   userAvatar:  { width: 20, height: 20, borderRadius: '50%', background: '#0078d4', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.58rem', fontWeight: 700, flexShrink: 0 },
   idBadge:     { background: '#f3f2f1', border: '1px solid #edebe9', borderRadius: '2px', padding: '1px 7px', fontSize: '0.68rem', color: '#605e5c', fontWeight: 500 },
+  actionAdd:   { display: 'inline-block', background: '#dff6dd', color: '#107c10', borderRadius: 2, padding: '2px 8px', fontSize: '0.64rem', fontWeight: 700, letterSpacing: '0.03em', border: '1px solid #c8e6c9' },
+  actionEdit:  { display: 'inline-block', background: '#e8f4fd', color: '#0078d4', borderRadius: 2, padding: '2px 8px', fontSize: '0.64rem', fontWeight: 700, letterSpacing: '0.03em', border: '1px solid #b3d7f2' },
+  actionDelete:{ display: 'inline-block', background: '#fde7e9', color: '#a4262c', borderRadius: 2, padding: '2px 8px', fontSize: '0.64rem', fontWeight: 700, letterSpacing: '0.03em', border: '1px solid #f5c6cb' },
   fieldsCell:  { display: 'flex', flexWrap: 'wrap', gap: 3 },
   fieldTag:    { background: '#e8f4fd', color: '#0078d4', borderRadius: 2, padding: '1px 6px', fontSize: '0.64rem', fontWeight: 500, whiteSpace: 'nowrap' },
   oldVal:      { color: '#a4262c', fontSize: '0.68rem', background: '#fef0f0', borderRadius: 2, padding: '4px 8px', border: '1px solid #fde7e9', whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 60, overflow: 'auto', minWidth: 180 },

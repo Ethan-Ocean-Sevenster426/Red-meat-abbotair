@@ -24,6 +24,9 @@ FILE_TO_TABLE = {
     'STTTrainingReport': 'STTTrainingReport',
     'TransformationMaster': 'TransformationMaster',
     'UserColumnPreferences': 'UserColumnPreferences',
+    'Learners': 'Learners',
+    'Facilitators': 'Facilitators',
+    'FeeStructure': 'FeeStructure',
 }
 
 
@@ -50,6 +53,7 @@ class Command(BaseCommand):
         # to let the referenced records exist.
         priority = ['Users', 'AbattoirMaster', 'TransformationMaster', 'GovernmentMaster',
                     'IndustryMaster', 'AssociatedMembersMaster', 'STTTrainingReport',
+                    'Learners', 'Facilitators', 'FeeStructure',
                     'UserColumnPreferences', 'AuditLog']
 
         # Temporarily disable FK checks for MySQL to allow flexible ordering

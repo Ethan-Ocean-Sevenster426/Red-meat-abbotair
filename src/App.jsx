@@ -17,10 +17,13 @@ import STTTrainingReport from './pages/STTTrainingReport.jsx';
 import STTBreakdownReport from './pages/STTBreakdownReport.jsx';
 import ARMSDashboard from './pages/ARMSDashboard.jsx';
 import FormalTrainingReport from './pages/FormalTrainingReport.jsx';
+import LearnerSummary from './pages/LearnerSummary.jsx';
 import FeedlotResidue from './pages/FeedlotResidue.jsx';
 import Industry from './pages/Industry.jsx';
 import AssociatedMembers from './pages/AssociatedMembers.jsx';
 import QuotationSystem from './pages/QuotationSystem.jsx';
+import NewQuote from './pages/NewQuote.jsx';
+import FeeStructure from './pages/FeeStructure.jsx';
 
 function App() {
   return (
@@ -145,6 +148,14 @@ function App() {
             }
           />
           <Route
+            path="/training-report/learner-summary"
+            element={
+              <ProtectedRoute>
+                <LearnerSummary />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/training-report/formal"
             element={
               <ProtectedRoute>
@@ -165,6 +176,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <QuotationSystem />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/quotation-system/new-quote"
+            element={
+              <ProtectedRoute>
+                <NewQuote />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/quotation-system/fee-structure"
+            element={
+              <ProtectedRoute>
+                <FeeStructure />
               </ProtectedRoute>
             }
           />

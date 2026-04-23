@@ -118,7 +118,7 @@ const REPORT_COLS = [
   { key: 'abattoir_name',       label: 'Abattoir Name',  w: 190 },
   { key: 'province',            label: 'Province',       w: 120 },
   { key: 'municipality',        label: 'Municipality',   w: 130 },
-  { key: 'thru_put',            label: 'Thru-Put',       w: 70  },
+  { key: 'thru_put',            label: 'Throughput',       w: 70  },
   { key: 'specie',              label: 'Specie',         w: 70  },
   { key: 'total_trained',       label: 'No. Trained',    w: 72,  num: true },
   { key: 'am',                  label: 'AM',  w: 40, num: true },
@@ -393,6 +393,83 @@ export default function STTBreakdownReport() {
     URL.revokeObjectURL(url);
   };
 
+  // ── Province summary helper ──
+  const getProvinceSummary = () => {
+    const provMap = {};
+    rows.forEach(r => {
+      const p = (r.province || 'Unknown').toUpperCase();
+      if (!provMap[p]) provMap[p] = { province: p, visits: 0, trained: 0, hdis: 0 };
+      provMap[p].visits += 1;
+      provMap[p].trained += parseInt(r.total_trained) || 0;
+      provMap[p].hdis += parseInt(r.hdis) || 0;
+    });
+    return Object.values(provMap).sort((a, b) => a.province.localeCompare(b.province));
+  };
+
+  const exportProvinceExcel = async () => {
+    const ExcelJS = (await import('exceljs')).default;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Provincial Summary');
+    const provRows = getProvinceSummary();
+    const yearLabel = fYears.length ? fYears.join(', ') : 'ALL';
+
+    // Title row
+    ws.mergeCells(1, 1, 1, 5);
+    const titleCell = ws.getCell(1, 1);
+    titleCell.value = `Provincial Summary — ${yearLabel}`;
+    titleCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4B8A' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(1).height = 28;
+
+    // Header row
+    const headers = ['#', 'PROVINCE', 'VISITS', '# TRAINED', "# HDI's"];
+    const headerRow = ws.addRow(headers);
+    headerRow.eachCell((cell, ci) => {
+      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4B8A' } };
+      cell.alignment = { horizontal: ci <= 2 ? 'left' : 'right', vertical: 'middle' };
+      cell.border = { right: { style: 'thin', color: { argb: 'FF4A6BB5' } }, bottom: { style: 'thin', color: { argb: 'FF1A3570' } } };
+    });
+    headerRow.height = 22;
+
+    // Data rows
+    provRows.forEach((r, i) => {
+      const row = ws.addRow([`${i + 1}.`, r.province, r.visits, r.trained, r.hdis]);
+      const stripe = i % 2 === 0 ? 'FFFFFFFF' : 'FFF7F8FA';
+      row.eachCell((cell, ci) => {
+        cell.font = { size: 10, bold: ci >= 4 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: stripe } };
+        cell.alignment = { horizontal: ci <= 2 ? 'left' : 'right', vertical: 'middle' };
+        cell.border = { bottom: { style: 'hair', color: { argb: 'FFEEF0F2' } } };
+      });
+    });
+
+    // Totals row
+    const totVisits = provRows.reduce((s, r) => s + r.visits, 0);
+    const totTrained = provRows.reduce((s, r) => s + r.trained, 0);
+    const totHdis = provRows.reduce((s, r) => s + r.hdis, 0);
+    const totRow = ws.addRow(['', `YEAR TOTALS: ${yearLabel}`, totVisits, totTrained, totHdis]);
+    totRow.eachCell((cell, ci) => {
+      cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4B8A' } };
+      cell.alignment = { horizontal: ci <= 2 ? 'left' : 'right', vertical: 'middle' };
+    });
+    totRow.height = 22;
+
+    // Column widths
+    [6, 30, 12, 14, 14].forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'STT_Provincial_Summary.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const exportAnalyticsPdf = async () => {
     if (!analyticsRef.current) return;
     const html2canvas = (await import('html2canvas')).default;
@@ -472,12 +549,14 @@ export default function STTBreakdownReport() {
             <FilterGroup label="Quarter">
               {sel(fQuarter, e => { setFQuarter(e.target.value); setFMonths([]); }, QUARTERS, 'All Quarters', !fYears.length)}
             </FilterGroup>
-            <FilterGroup label="Province" wide>
+            <FilterGroup label="Province">
               <MultiFilter label="All Provinces" options={provinceOpts.map(p => ({ value: p, label: p }))} selected={fProvinces} onChange={setFProvinces} />
             </FilterGroup>
-            <FilterGroup label="Abattoir" wide>
-              <MultiFilter label="All Abattoirs" options={abattoirOpts.map(a => ({ value: a, label: a }))} selected={fAbattoirs} onChange={setFAbattoirs} />
-            </FilterGroup>
+            {view !== 'province' && (
+              <FilterGroup label="Abattoir">
+                <MultiFilter label="All Abattoirs" options={abattoirOpts.map(a => ({ value: a, label: a }))} selected={fAbattoirs} onChange={setFAbattoirs} />
+              </FilterGroup>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
               <button onClick={applyFilters} style={s.btnApply}>Apply</button>
             </div>
@@ -490,7 +569,8 @@ export default function STTBreakdownReport() {
         <div style={s.toolbar} className="no-print">
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={s.viewToggle}>
-              <button onClick={() => setView('table')} style={view === 'table' ? s.viewBtnActive : s.viewBtn}>Table</button>
+              <button onClick={() => setView('province')} style={view === 'province' ? s.viewBtnActive : s.viewBtn}>Province</button>
+              <button onClick={() => setView('table')} style={view === 'table' ? s.viewBtnActive : s.viewBtn}>All Data</button>
               <button onClick={() => setView('analytics')} style={view === 'analytics' ? s.viewBtnActive : s.viewBtn}>Analytics</button>
             </div>
             <span style={s.recordCount}>
@@ -498,7 +578,9 @@ export default function STTBreakdownReport() {
             </span>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            <button onClick={exportExcel} style={s.btnExport} disabled={rows.length === 0}>Export Excel</button>
+            {view !== 'analytics' && (
+              <button onClick={view === 'province' ? exportProvinceExcel : exportExcel} style={s.btnExport} disabled={rows.length === 0}>Export Excel</button>
+            )}
             {view === 'analytics' ? (
               <button onClick={exportAnalyticsPdf} style={s.btnPrint} disabled={!analytics}>Export PDF</button>
             ) : (
@@ -649,6 +731,58 @@ export default function STTBreakdownReport() {
         {view === 'analytics' && !analytics && !loading && (
           <div style={{ textAlign: 'center', padding: 40, color: '#8a8886' }}>No data to display. Apply filters and click Apply.</div>
         )}
+
+        {/* ── Province View ── */}
+        {view === 'province' && (() => {
+          const provRows = getProvinceSummary();
+          const totVisits = provRows.reduce((s, r) => s + r.visits, 0);
+          const totTrained = provRows.reduce((s, r) => s + r.trained, 0);
+          const totHdis = provRows.reduce((s, r) => s + r.hdis, 0);
+          const yearLabel = fYears.length ? fYears.join(', ') : 'ALL';
+          return (
+            <div style={{ background: '#fff', border: '1px solid #e1e4e8', borderRadius: 4, overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', flex: 1, minHeight: 0 }}>
+              <div style={{ background: HEADER_BG, color: '#fff', fontWeight: 700, fontSize: '0.88rem', textAlign: 'center', padding: '11px 16px', letterSpacing: '0.03em' }}>
+                Provincial Summary
+              </div>
+              {loading ? (
+                <div style={s.loadMsg}>Loading…</div>
+              ) : provRows.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '32px 16px', color: '#64748b', fontStyle: 'italic', fontSize: '0.85rem' }}>No records match the selected filters.</div>
+              ) : (
+                <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ ...s.th, width: 40, textAlign: 'center' }}>#</th>
+                      <th style={{ ...s.th, textAlign: 'left' }}>PROVINCE</th>
+                      <th style={{ ...s.th, textAlign: 'right', width: 120 }}>VISITS</th>
+                      <th style={{ ...s.th, textAlign: 'right', width: 140 }}># TRAINED</th>
+                      <th style={{ ...s.th, textAlign: 'right', width: 140 }}># HDI's</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {provRows.map((r, i) => (
+                      <tr key={r.province} style={{ background: i % 2 === 0 ? '#ffffff' : '#f7f8fa' }}>
+                        <td style={{ ...s.td, textAlign: 'center', fontWeight: 600, color: HEADER_BG, fontSize: '0.8rem' }}>{i + 1}.</td>
+                        <td style={{ ...s.td, fontWeight: 600, color: '#323130', fontSize: '0.8rem' }}>{r.province}</td>
+                        <td style={{ ...s.td, textAlign: 'right', fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem' }}>{r.visits.toLocaleString()}</td>
+                        <td style={{ ...s.td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem' }}>{r.trained.toLocaleString()}</td>
+                        <td style={{ ...s.td, textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', fontSize: '0.8rem' }}>{r.hdis.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={2} style={{ ...s.totalsLabel, textAlign: 'right', paddingRight: 16 }}>YEAR TOTALS: {yearLabel}</td>
+                      <td style={{ ...s.totalsCell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{totVisits.toLocaleString()}</td>
+                      <td style={{ ...s.totalsCell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{totTrained.toLocaleString()}</td>
+                      <td style={{ ...s.totalsCell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{totHdis.toLocaleString()}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          );
+        })()}
 
         {/* ── Table ── */}
         <div style={{ ...s.tableWrap, display: view === 'table' ? 'flex' : 'none', flexDirection: 'column' }}>

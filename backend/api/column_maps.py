@@ -146,6 +146,19 @@ RESIDUE_HEADER_MAP = [
     'cost_screening', 'cost_confirmation', 'admin_cost',
 ]
 
+FEE_STRUCTURE_COLS = [
+    'category', 'description', 'days', 'rmaa_members', 'non_members', 'sort_order',
+    'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values',
+]
+FEE_STRUCTURE_BRACKETS = set()
+
+LEARNER_COLS = [
+    'name', 'surname', 'id_number', 'year_of_birth', 'age', 'citizen',
+    'race_gender', 'work_stations',
+    'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values',
+]
+LEARNER_BRACKETS = set()
+
 AUDIT_NAME_JOIN = {
     'STTTrainingReport': ('STTTrainingReport', 'abattoir_name'),
     'AbattoirMaster': ('AbattoirMaster', 'abattoir_name'),
@@ -154,4 +167,6 @@ AUDIT_NAME_JOIN = {
     'IndustryMaster': ('IndustryMaster', 'company'),
     'AssociatedMembersMaster': ('AssociatedMembersMaster', 'company'),
     'ResidueMonitoring': ('ResidueMonitoring', 'establishment'),
+    'Learners': ('Learners', 'surname'),
+    'FeeStructure': ('FeeStructure', 'description'),
 }

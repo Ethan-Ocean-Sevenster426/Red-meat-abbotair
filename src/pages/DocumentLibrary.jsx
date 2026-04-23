@@ -8,9 +8,12 @@ function formatSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function formatDate(iso) {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
+function formatDate(ts) {
+  if (!ts) return '';
+  // Backend sends Unix timestamp in seconds (st_mtime), convert to milliseconds
+  const d = new Date(ts * 1000);
+  if (isNaN(d)) return '';
+  return d.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function collectFiles(node) {
@@ -113,7 +116,9 @@ export default function DocumentLibrary() {
   }
 
   const selectedNode = selectedPath ? findNode(tree, selectedPath) : null;
-  const displayFiles = selectedNode ? collectFiles(selectedNode) : [];
+  // Only show direct children (files + sub-folders), not recursively flattened
+  const displayFiles = selectedNode ? (selectedNode.children || []).filter(c => c.type === 'file') : [];
+  const displayFolders = selectedNode ? (selectedNode.children || []).filter(c => c.type === 'folder') : [];
   const totalFiles   = tree.flatMap(collectFiles).length;
 
   const handleDelete = async (file) => {
@@ -206,11 +211,11 @@ export default function DocumentLibrary() {
               <div style={s.emptyTitle}>Select a folder</div>
               <div style={s.emptySub}>Choose a province, abattoir, or document folder on the left to view its files.</div>
             </div>
-          ) : displayFiles.length === 0 ? (
+          ) : displayFolders.length === 0 && displayFiles.length === 0 ? (
             <div style={s.emptyState}>
               <div style={s.emptyIcon}>🗂️</div>
               <div style={s.emptyTitle}>No files here</div>
-              <div style={s.emptySub}>This folder contains no PDF documents.</div>
+              <div style={s.emptySub}>This folder is empty.</div>
             </div>
           ) : (
             <div style={s.mainInner}>
@@ -228,10 +233,43 @@ export default function DocumentLibrary() {
 
               {/* File count */}
               <div style={s.fileCountRow}>
-                <span style={s.fileCountLabel}>{displayFiles.length} document{displayFiles.length !== 1 ? 's' : ''}</span>
+                <span style={s.fileCountLabel}>
+                  {displayFolders.length > 0 && `${displayFolders.length} folder${displayFolders.length !== 1 ? 's' : ''}`}
+                  {displayFolders.length > 0 && displayFiles.length > 0 && ', '}
+                  {displayFiles.length > 0 && `${displayFiles.length} document${displayFiles.length !== 1 ? 's' : ''}`}
+                </span>
               </div>
 
-              {/* File table */}
+              {/* Sub-folders */}
+              {displayFolders.length > 0 && (
+                <div style={s.tableWrap}>
+                  <table style={s.table}>
+                    <thead><tr><th style={s.th}>Folder</th><th style={{ ...s.th, width: '100px' }}>Files</th></tr></thead>
+                    <tbody>
+                      {displayFolders.map((folder, i) => {
+                        const fileCount = collectFiles(folder).length;
+                        return (
+                          <tr key={folder.path} style={{ background: i % 2 === 0 ? '#ffffff' : '#faf9f8', cursor: 'pointer' }}
+                            onClick={() => setSelectedPath(folder.path)}
+                            onMouseEnter={e => { e.currentTarget.style.background = '#deecf9'; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = i % 2 === 0 ? '#ffffff' : '#faf9f8'; }}>
+                            <td style={s.td}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                <span style={{ fontSize: '1.2rem' }}>📂</span>
+                                <span style={{ fontSize: '0.85rem', color: '#0078d4', fontWeight: 600 }}>{folder.name}</span>
+                              </div>
+                            </td>
+                            <td style={{ ...s.td, color: '#605e5c', fontSize: '0.78rem' }}>{fileCount} file{fileCount !== 1 ? 's' : ''}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {/* Files */}
+              {displayFiles.length > 0 && (
               <div style={s.tableWrap}>
                 <table style={s.table}>
                   <thead>
@@ -286,6 +324,7 @@ export default function DocumentLibrary() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
           )}
         </div>

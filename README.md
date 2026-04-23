@@ -1,14 +1,16 @@
 # RMAA ERP System
 
-Enterprise Resource Planning system for the Red Meat Abattoir Association (RMAA). Built with React + Vite (frontend) and Express + SQL Server (backend).
+Enterprise Resource Planning system for the Red Meat Abattoir Association (RMAA). Built with React + Vite (frontend) and Django + MySQL (backend).
 
 ---
 
 ## Prerequisites
 
-- **Node.js** v18+ (ESM modules required)
-- **Microsoft SQL Server** 2019+ (or SQL Server Express)
-- **Microsoft Graph API** credentials (for email and PDF conversion)
+- **Node.js** v18+
+- **Python** 3.11+
+- **MySQL** 8.0+ (or SQLite for local dev)
+- **Microsoft Office (Excel)** or **LibreOffice** — required for STT training register PDF conversion (fit-to-page export)
+- **Microsoft Graph API** credentials (for email sending)
 - **npm** v9+
 
 ---
@@ -16,66 +18,88 @@ Enterprise Resource Planning system for the Red Meat Abattoir Association (RMAA)
 ## Quick Start
 
 ```bash
-# 1. Clone and install
+# 1. Clone and configure environment
 cd "RMAA System"
-npm install
-
-# 2. Configure environment
 cp .env.example .env
 # Edit .env with your database and Graph API credentials
 
-# 3. Start both frontend and backend
+# 2. Set up the backend (Django)
+cd backend
+
+# Windows:
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+
+# Linux/macOS:
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. Run migrations and seed data
+python manage.py migrate
+python manage.py seed_users
+python manage.py seed_from_xlsx --truncate    # seeds from seed-data/*.xlsx
+
+# 4. Install frontend dependencies (from project root)
+cd ..
+npm install
+
+# 5. Start both frontend and backend
 npm start
 ```
 
 This runs:
-- **Backend API** on `http://localhost:4000`
+- **Backend API** on `http://localhost:8000`
 - **Frontend** on `http://localhost:5173` (Vite dev server, proxies `/api` to backend)
 
 ### Run individually
 
 ```bash
-# Backend only
-npm run start:server
+# Backend only (from project root)
+npm run start:backend
 
 # Frontend only
 npm run dev
-
-# Test database connection
-npm run test:db
 ```
 
 ---
 
 ## Environment Variables
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root (see `.env.example`):
 
 ```env
-# Server
-PORT=4000
+# Django
+DJANGO_SECRET_KEY=change-me-generate-a-real-secret
+DJANGO_DEBUG=0
+DJANGO_ALLOWED_HOSTS=your-domain.com,127.0.0.1
 
-# SQL Server Database
-DB_USER=your_db_user
-DB_PASSWORD=your_db_password
-DB_SERVER=localhost
-DB_PORT=1433
-DB_DATABASE=RMAAAuthDB
+# Database — MySQL (production) or sqlite (dev only)
+DB_ENGINE=mysql          # set to "sqlite" for local dev without MySQL
+DB_USER=rmaa
+DB_PASSWORD=your-strong-password
+DB_SERVER=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=rmaa
 
-# Microsoft Graph API (for email sending and PDF conversion)
-GRAPH_TENANT_ID=your_tenant_id
-GRAPH_CLIENT_ID=your_client_id
-GRAPH_CLIENT_SECRET=your_client_secret
+# Microsoft Graph API — for sending invitation emails, quotes, database forms
+GRAPH_TENANT_ID=your-tenant-id
+GRAPH_CLIENT_ID=your-client-id
+GRAPH_CLIENT_SECRET=your-client-secret
 GRAPH_SENDER_EMAIL=sender@yourdomain.com
+
+# Frontend base URL (used in invitation emails)
+APP_BASE_URL=https://your-domain.com
 ```
 
 ### Database Setup
 
-The application **auto-creates all tables** on first startup. No manual schema setup is required. When the server starts, `server/db.js` runs migrations that create any missing tables:
+Tables are managed via Django migrations. Run `python manage.py migrate` from the `backend/` directory to create or update the schema.
 
 | Table | Description |
 |-------|-------------|
 | `Users` | Authentication and user management |
+| `Invitations` | User invitation tokens |
 | `AbattoirMaster` | Registered abattoir directory (600+ records) |
 | `TransformationMaster` | Transformation facility data |
 | `GovernmentMaster` | Government contacts |
@@ -83,11 +107,13 @@ The application **auto-creates all tables** on first startup. No manual schema s
 | `AssociatedMembersMaster` | Associated member organisations |
 | `STTTrainingReport` | STT training records (4500+ records) |
 | `TrainingReport` | General training records |
+| `Learners` | Learner records linked to training data |
+| `Facilitators` | Training facilitator records |
+| `FeeStructure` | Fee structure / pricing data |
 | `ResidueMonitoring` / `ResidueMonitoringTemp` | Residue monitoring data |
 | `CustomAbattoirs` | User-added abattoir names (not in master list) |
 | `AuditLog` | Central change tracking across all tables |
 | `UserColumnPreferences` | Per-user column visibility and order |
-| `Invitations` | User invitation tokens |
 
 ### Microsoft Graph API Setup
 
@@ -109,25 +135,27 @@ If Graph API is not configured, the app still works but email sending and PDF co
 
 ```
 RMAA System/
-├── server/                        # Backend (Express.js)
-│   ├── index.js                   # Server entry point, route registration
-│   ├── db.js                      # Database connection pool, table auto-migration
-│   ├── email.js                   # Microsoft Graph: email sending + PDF conversion
-│   └── routes/
-│       ├── auth.js                # Login, registration, JWT tokens
-│       ├── abattoir.js            # Registered Abattoirs CRUD + Excel import + email
-│       ├── associatedMembers.js   # Associated Members CRUD
-│       ├── auditLog.js            # Central audit log with filtering + name joins
-│       ├── documents.js           # Document library (tree, view, download, delete)
-│       ├── government.js          # Government contacts CRUD
-│       ├── industry.js            # Industry stakeholders CRUD
-│       ├── quotation.js           # Quotation: generate from template, PDF, email
-│       ├── residue.js             # Residue monitoring: Excel import + committed data
-│       ├── sttTrainingReport.js   # STT training CRUD + breakdown aggregation + Excel parse
-│       ├── trainingReport.js      # General training CRUD
-│       ├── transformation.js      # Transformation facilities CRUD
-│       ├── users.js               # User management (admin only)
-│       └── userPreferences.js     # Column visibility + drag order per user
+├── backend/                       # Backend (Django)
+│   ├── manage.py                  # Django management CLI
+│   ├── requirements.txt           # Python dependencies
+│   ├── rmaa_backend/              # Django project settings
+│   │   ├── settings.py            # Database, middleware, app config
+│   │   ├── urls.py                # Root URL config (mounts /api/)
+│   │   ├── wsgi.py                # WSGI entry point
+│   │   └── asgi.py                # ASGI entry point
+│   └── api/                       # Django app — models, views, routes
+│       ├── models.py              # All database models (Django ORM)
+│       ├── views.py               # API views (CRUD, import, email, etc.)
+│       ├── urls.py                # API URL routing (/api/...)
+│       ├── helpers.py             # Shared CRUD helpers, pagination, audit
+│       ├── column_maps.py         # Column definitions per model
+│       ├── email.py               # Microsoft Graph: email sending + PDF conversion
+│       ├── management/commands/
+│       │   ├── seed_users.py      # Create default admin user
+│       │   └── seed_from_xlsx.py  # Seed database from seed-data/*.xlsx
+│       └── migrations/            # Django database migrations
+│
+├── seed-data/                     # Excel files for initial data seeding
 │
 ├── src/                           # Frontend (React 18 + Vite)
 │   ├── main.jsx                   # App entry point
@@ -167,9 +195,10 @@ RMAA System/
 │   └── {Province}/{Abattoir}/     # Auto-organized by province and abattoir name
 │
 ├── Quotation Template.xlsx        # Excel template for quotation generation
-├── vite.config.js                 # Vite config with /api proxy to :4000
-├── package.json
+├── vite.config.js                 # Vite config with /api proxy to :8000
+├── package.json                   # Frontend deps + npm start (runs both)
 ├── .env                           # Environment variables (not committed)
+├── .env.example                   # Template for .env
 └── README.md
 ```
 
@@ -177,14 +206,13 @@ RMAA System/
 
 ## API Endpoints
 
-All endpoints are prefixed with `/api`. The Vite dev server proxies `/api/*` to `http://localhost:4000`.
+All endpoints are prefixed with `/api`. The Vite dev server proxies `/api/*` to `http://localhost:8000`.
 
 ### Authentication
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/login` | Login with username/password, returns JWT |
-| POST | `/api/register` | Register via invitation token |
 
 ### Data Tables
 
@@ -210,6 +238,9 @@ Each table follows the same REST pattern:
 | `/api/associated-members` | AssociatedMembersMaster | Associated Members |
 | `/api/stt-training-report` | STTTrainingReport | STT Training Report |
 | `/api/training-report` | TrainingReport | Training Report |
+| `/api/learners` | Learners | Learner Records |
+| `/api/facilitators` | Facilitators | Facilitator Records |
+| `/api/fee-structure` | FeeStructure | Fee Structure |
 | `/api/residue` | ResidueMonitoring | Residue Monitoring |
 
 ### Special Endpoints
@@ -219,21 +250,37 @@ Each table follows the same REST pattern:
 | GET | `/api/audit-log?table=X&user=Y&year=2025&month=3&days=7` | Central audit log with multi-value filters |
 | GET | `/api/abattoir/names` | All abattoir names (registered + custom) for dropdowns |
 | POST | `/api/abattoir/custom` | Add a custom abattoir name |
+| DELETE | `/api/abattoir/custom/:id` | Delete a custom abattoir name |
+| POST | `/api/abattoir/:id/send-database-form` | Email database form for an abattoir |
 | GET | `/api/stt-training-report/breakdown?year=2025&month=1,2&province=Gauteng` | Aggregated training breakdown with multi-select filters |
+| GET | `/api/stt-training-report/learner-summary` | Learner summary with pagination |
 | POST | `/api/stt-training-report/parse-excel` | Parse uploaded Excel training register |
 | POST | `/api/stt-training-report/export-pdf` | Generate PDF from Excel + save to document library |
+| POST | `/api/learners/merge` | Merge duplicate learner records |
+| GET | `/api/facilitators` | List all facilitators |
+| DELETE | `/api/facilitators/:id` | Delete a facilitator |
 | GET | `/api/quotation/abattoir-details?name=X` | Fetch abattoir details for quotation auto-fill |
 | POST | `/api/quotation/generate` | Generate quotation PDF from template (no save) |
 | POST | `/api/quotation/send` | Email quotation PDF + save to document library |
 | GET/PUT | `/api/user-prefs?page=X&userId=Y` | Column visibility + order preferences |
 | GET | `/api/documents/tree` | Document library folder/file tree |
 | GET | `/api/documents/view?p=path` | View PDF inline or download file |
+| GET | `/api/documents/download?p=path` | Download a document |
 | DELETE | `/api/documents/delete?p=path` | Delete a document |
+| GET | `/api/residue/template` | Download residue monitoring template |
+| POST | `/api/residue/upload` | Upload residue monitoring Excel |
+| GET | `/api/residue/temp/:batch_id` | Get temporary residue batch data |
+| POST | `/api/residue/commit-rows` | Commit validated residue rows |
+| GET | `/api/residue/committed` | List committed residue data |
+| DELETE | `/api/residue/committed/all` | Clear all committed residue data |
+| PUT | `/api/residue/committed/:id` | Update a committed residue row |
 | GET | `/api/users` | List all users (admin) |
 | PUT | `/api/users/:id/role` | Change user role (admin) |
 | PUT | `/api/users/:id/permissions` | Update user page permissions (admin) |
 | DELETE | `/api/users/:id` | Delete user (admin) |
 | POST | `/api/users/invite` | Send invitation email (admin) |
+| GET | `/api/users/invite/:token` | Look up invitation by token |
+| POST | `/api/users/invite/accept` | Accept invitation and create account |
 | GET | `/api/status` | Simple health check |
 | GET | `/api/health` | Detailed DB health check with table row counts |
 
@@ -294,20 +341,22 @@ Each table follows the same REST pattern:
 ## Build for Production
 
 ```bash
+# Build the frontend
 npm run build
 ```
 
-Creates a `dist/` folder. The Express server serves `dist/` automatically when `NODE_ENV=production`:
+Creates a `dist/` folder. In production, serve the frontend with Nginx (or similar) and run the Django backend via Gunicorn or WSGI:
 
 ```bash
-NODE_ENV=production node server/index.js
+cd backend
+gunicorn rmaa_backend.wsgi:application --bind 0.0.0.0:8000
 ```
 
 ---
 
 ## Default Admin Account
 
-On first startup, a default admin user is created:
+Run `python manage.py seed_users` (from the `backend/` directory) to create the default admin:
 
 | Username | Password | Role |
 |----------|----------|------|
@@ -325,10 +374,13 @@ On first startup, a default admin user is created:
 | Build | Vite | 5.4 |
 | Routing | React Router | 6.17 |
 | Charts | Recharts | 3.8 |
-| Backend | Express.js | 4.18 |
-| Database | SQL Server (mssql) | 9.0 |
-| Excel | ExcelJS | 4.4 |
-| PDF | jsPDF + html2canvas | 4.2 / 1.4 |
+| Backend | Django | 5.2 |
+| Database | MySQL | 8.4 |
+| Python DB driver | PyMySQL | 1.1 |
+| Excel (backend) | openpyxl | 3.1 |
+| Excel (frontend) | ExcelJS | 4.4 |
+| PDF conversion | pywin32 (Windows) / LibreOffice (Linux) | - |
+| PDF (frontend) | jsPDF + html2canvas | 4.2 / 1.4 |
 | Email | Microsoft Graph API | - |
 | Auth | JWT (custom) | - |
 
@@ -337,16 +389,13 @@ On first startup, a default admin user is created:
 ## Troubleshooting
 
 ### Database connection fails
-- Ensure SQL Server is running and accepting TCP/IP connections on port 1433
-- Open SQL Server Configuration Manager and enable TCP/IP protocol
-- Check `DB_USER` and `DB_PASSWORD` in `.env`
-- SQL Server must have **SQL Server Authentication** enabled (mixed mode, not just Windows Auth)
-- Run `npm run test:db` to diagnose connection issues
+- Ensure MySQL is running and accepting connections on port 3306
+- Check `DB_USER`, `DB_PASSWORD`, `DB_SERVER`, `DB_DATABASE` in `.env`
+- For local development, set `DB_ENGINE=sqlite` to use SQLite instead of MySQL
 
 ### Tables not created
+- Run `python manage.py migrate` from the `backend/` directory
 - Check server startup logs for migration errors
-- The `initDb()` function in `server/db.js` creates all tables with `IF NOT EXISTS` guards
-- If a table is corrupted, you can drop it manually and restart the server
 
 ### Email sending fails
 - Verify all 4 `GRAPH_*` variables in `.env`
@@ -354,18 +403,29 @@ On first startup, a default admin user is created:
 - **Admin consent** must be granted in Azure portal
 - The `GRAPH_SENDER_EMAIL` must be a valid mailbox in the tenant
 
-### PDF conversion fails
-- PDF conversion uploads an Excel file to the sender's OneDrive, renders it as PDF, then deletes it
-- Requires `Files.ReadWrite.All` application permission
-- The sender email account needs a **OneDrive/SharePoint license**
-- Check server logs for specific Graph API error messages
+### PDF conversion fails (STT Training Register)
+- PDF conversion uses **Microsoft Excel** (via COM automation) or **LibreOffice** to convert the uploaded Excel attendance register to a single-page portrait A4 PDF with fit-to-page scaling
+- **Windows (local dev):** Requires Microsoft Excel installed. The `pywin32` package is used for COM automation
+- **Linux (production server):** Install LibreOffice headless: `sudo apt install libreoffice-calc`
+- The conversion sets fit-to-page (1 wide x 1 tall), portrait A4, print area `$A$1:$AD$53`
+- If neither Excel nor LibreOffice is available, the PDF conversion will fail but data will still be saved
 
 ### Vite proxy errors / CORS issues
-- Ensure the backend is running on port 4000 **before** starting the frontend
+- Ensure the backend is running on port 8000 **before** starting the frontend
 - Use `npm start` to run both concurrently (recommended)
-- The proxy config in `vite.config.js` forwards all `/api/*` requests to `http://localhost:4000`
+- The proxy config in `vite.config.js` forwards all `/api/*` requests to `http://localhost:8000`
 
 ### Excel import fails
 - Ensure the Excel file follows the expected column layout
 - Check browser console for parse errors
-- The server uses ExcelJS to read `.xlsx` files (`.xls` not supported)
+- The server uses openpyxl to read `.xlsx` files (`.xls` not supported)
+
+### Virtual environment issues (Windows)
+- If `.venv\Scripts\pip` is not found, ensure Python 3.11+ is on your PATH
+- Re-create the venv: `python -m venv .venv --clear`
+- Activate before running Django commands: `.venv\Scripts\activate`
+
+### Seed data fails
+- Ensure seed files exist in `seed-data/` (e.g., `AbattoirMaster.xlsx`, `Users.xlsx`)
+- Run `python manage.py seed_from_xlsx --truncate` to wipe and re-seed
+- Run `python manage.py seed_users` to recreate the default admin user
