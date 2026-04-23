@@ -60,11 +60,11 @@ def _graph_post(path: str, json_body: dict, token: str, extra_headers: dict | No
 
 
 def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53') -> bytes:
-    """Convert Excel to a single-page portrait A4 PDF using local Excel."""
+    """Convert Excel to PDF. Uses win32com on Windows, LibreOffice on Linux."""
+    import sys
     import tempfile
     import os
-    import win32com.client
-    import pythoncom
+    import subprocess
 
     tmp_xlsx = os.path.join(tempfile.gettempdir(), f'_stt_{int(time.time() * 1000)}.xlsx')
     tmp_pdf = tmp_xlsx.replace('.xlsx', '.pdf')
@@ -73,37 +73,41 @@ def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53') ->
         with open(tmp_xlsx, 'wb') as f:
             f.write(xlsx_buffer)
 
-        pythoncom.CoInitialize()
-        excel = win32com.client.Dispatch('Excel.Application')
-        excel.Visible = False
-        excel.DisplayAlerts = False
-
-        try:
-            wb = excel.Workbooks.Open(os.path.abspath(tmp_xlsx), ReadOnly=True)
-            ws = wb.Worksheets(1)
-
-            # Fit to 1 page, portrait, A4
-            ws.PageSetup.Zoom = False
-            ws.PageSetup.FitToPagesWide = 1
-            ws.PageSetup.FitToPagesTall = 1
-            ws.PageSetup.Orientation = 1   # xlPortrait
-            ws.PageSetup.PaperSize = 9     # A4
-            ws.PageSetup.PrintArea = print_area
-
-            # Tight margins
-            ws.PageSetup.LeftMargin = excel.InchesToPoints(0.2)
-            ws.PageSetup.RightMargin = excel.InchesToPoints(0.2)
-            ws.PageSetup.TopMargin = excel.InchesToPoints(0.2)
-            ws.PageSetup.BottomMargin = excel.InchesToPoints(0.2)
-            ws.PageSetup.HeaderMargin = excel.InchesToPoints(0.1)
-            ws.PageSetup.FooterMargin = excel.InchesToPoints(0.1)
-
-            # Export first sheet as PDF
-            wb.ExportAsFixedFormat(0, os.path.abspath(tmp_pdf))  # 0 = xlTypePDF
-            wb.Close(False)
-        finally:
-            excel.Quit()
-            pythoncom.CoUninitialize()
+        if sys.platform == 'win32':
+            import win32com.client
+            import pythoncom
+            pythoncom.CoInitialize()
+            excel = win32com.client.Dispatch('Excel.Application')
+            excel.Visible = False
+            excel.DisplayAlerts = False
+            try:
+                wb = excel.Workbooks.Open(os.path.abspath(tmp_xlsx), ReadOnly=True)
+                ws = wb.Worksheets(1)
+                ws.PageSetup.Zoom = False
+                ws.PageSetup.FitToPagesWide = 1
+                ws.PageSetup.FitToPagesTall = 1
+                ws.PageSetup.Orientation = 1
+                ws.PageSetup.PaperSize = 9
+                ws.PageSetup.PrintArea = print_area
+                ws.PageSetup.LeftMargin = excel.InchesToPoints(0.2)
+                ws.PageSetup.RightMargin = excel.InchesToPoints(0.2)
+                ws.PageSetup.TopMargin = excel.InchesToPoints(0.2)
+                ws.PageSetup.BottomMargin = excel.InchesToPoints(0.2)
+                ws.PageSetup.HeaderMargin = excel.InchesToPoints(0.1)
+                ws.PageSetup.FooterMargin = excel.InchesToPoints(0.1)
+                wb.ExportAsFixedFormat(0, os.path.abspath(tmp_pdf))
+                wb.Close(False)
+            finally:
+                excel.Quit()
+                pythoncom.CoUninitialize()
+        else:
+            result = subprocess.run(
+                ['libreoffice', '--headless', '--convert-to', 'pdf',
+                 '--outdir', tempfile.gettempdir(), tmp_xlsx],
+                capture_output=True, timeout=60,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(result.stderr.decode())
 
         with open(tmp_pdf, 'rb') as f:
             return f.read()
