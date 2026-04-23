@@ -101,6 +101,21 @@ def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53') ->
                 excel.Quit()
                 pythoncom.CoUninitialize()
         else:
+            from openpyxl import load_workbook
+            from openpyxl.worksheet.page import PageMargins
+            wb_obj = load_workbook(tmp_xlsx)
+            ws_obj = wb_obj.active
+            ws_obj.print_area = print_area
+            ws_obj.page_setup.orientation = 'portrait'
+            ws_obj.page_setup.paperSize = ws_obj.PAPERSIZE_A4
+            ws_obj.page_setup.fitToWidth = 1
+            ws_obj.page_setup.fitToHeight = 1
+            ws_obj.page_setup.fitToPage = True
+            ws_obj.page_margins = PageMargins(
+                left=0.2, right=0.2, top=0.2, bottom=0.2,
+                header=0.1, footer=0.1,
+            )
+            wb_obj.save(tmp_xlsx)
             result = subprocess.run(
                 ['libreoffice', '--headless', '--convert-to', 'pdf',
                  '--outdir', tempfile.gettempdir(), tmp_xlsx],
