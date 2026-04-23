@@ -59,8 +59,14 @@ def _graph_post(path: str, json_body: dict, token: str, extra_headers: dict | No
     )
 
 
-def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53') -> bytes:
-    """Convert Excel to PDF. Uses win32com on Windows, LibreOffice on Linux."""
+def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53',
+                         setup_page: bool = False) -> bytes:
+    """Convert Excel to PDF. Uses win32com on Windows, LibreOffice on Linux.
+
+    setup_page: when True, bakes print-area/fit-to-page into the file before
+    converting (used for generated quotations). Leave False for user-uploaded
+    files so embedded images are preserved as-is.
+    """
     import sys
     import tempfile
     import os
@@ -101,21 +107,22 @@ def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53') ->
                 excel.Quit()
                 pythoncom.CoUninitialize()
         else:
-            from openpyxl import load_workbook
-            from openpyxl.worksheet.page import PageMargins
-            wb_obj = load_workbook(tmp_xlsx)
-            ws_obj = wb_obj.active
-            ws_obj.print_area = print_area
-            ws_obj.page_setup.orientation = 'portrait'
-            ws_obj.page_setup.paperSize = ws_obj.PAPERSIZE_A4
-            ws_obj.page_setup.fitToWidth = 1
-            ws_obj.page_setup.fitToHeight = 1
-            ws_obj.page_setup.fitToPage = True
-            ws_obj.page_margins = PageMargins(
-                left=0.2, right=0.2, top=0.2, bottom=0.2,
-                header=0.1, footer=0.1,
-            )
-            wb_obj.save(tmp_xlsx)
+            if setup_page:
+                from openpyxl import load_workbook
+                from openpyxl.worksheet.page import PageMargins
+                wb_obj = load_workbook(tmp_xlsx)
+                ws_obj = wb_obj.active
+                ws_obj.print_area = print_area
+                ws_obj.page_setup.orientation = 'portrait'
+                ws_obj.page_setup.paperSize = ws_obj.PAPERSIZE_A4
+                ws_obj.page_setup.fitToWidth = 1
+                ws_obj.page_setup.fitToHeight = 1
+                ws_obj.page_setup.fitToPage = True
+                ws_obj.page_margins = PageMargins(
+                    left=0.2, right=0.2, top=0.2, bottom=0.2,
+                    header=0.1, footer=0.1,
+                )
+                wb_obj.save(tmp_xlsx)
             result = subprocess.run(
                 ['libreoffice', '--headless', '--convert-to', 'pdf',
                  '--outdir', tempfile.gettempdir(), tmp_xlsx],

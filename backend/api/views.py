@@ -1337,7 +1337,7 @@ def quotation_generate_view(request):
         wb.save(xlsx_buf)
         xlsx_bytes = xlsx_buf.getvalue()
 
-        pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$45')
+        pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$45', setup_page=True)
         folder = f"Quotation {date_str.replace('/', '-')} {sanitize_fs_name(data.get('clientName'))}"
         return Response({
             'ok': True,
