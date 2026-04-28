@@ -328,8 +328,14 @@ export default function Government() {
                   if (hiddenCols.has(col.key)) return null;
                   const hasFilter = !!(colFilters[col.key] || '').trim();
                   const isSorted  = sortCol === col.key;
+                  const isStickyName = col.key === 'name';
                   return (
-                    <th key={col.key} style={{ ...s.th, minWidth: col.w, maxWidth: col.w, background: hasFilter ? '#106ebe' : '#0078d4' }}>
+                    <th key={col.key} style={{
+                      ...s.th,
+                      minWidth: col.w, maxWidth: col.w,
+                      background: hasFilter ? '#106ebe' : '#0078d4',
+                      ...(isStickyName ? { left: 130, zIndex: 5, borderRight: '2px solid #005a9e' } : {}),
+                    }}>
                       <div style={{ ...s.thLabel, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort(col.key)}>
                         {col.label}{isSorted && <span style={{ marginLeft: 3, fontSize: '0.55rem', opacity: 0.85 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
                       </div>
@@ -376,6 +382,9 @@ export default function Government() {
                     {orderedColumns.map(col => {
                       if (hiddenCols.has(col.key)) return null;
                       const val = cellVal(row, col.key);
+                      const isStickyName = col.key === 'name';
+                      const rowBg = dirty ? '#e8f4fd' : ri % 2 === 0 ? '#ffffff' : '#f3f2f1';
+                      const stickyStyle = isStickyName ? { position: 'sticky', left: 130, zIndex: 3, background: rowBg, borderRight: '2px solid #edebe9' } : {};
                       if (col.readonly) {
                         const wrap = WRAP_COLS.has(col.key);
                         return (
@@ -383,6 +392,7 @@ export default function Government() {
                             ...s.td, minWidth: wrap ? 280 : col.w, maxWidth: wrap ? 360 : col.w,
                             color: '#605e5c', fontStyle: 'italic',
                             ...(wrap ? { whiteSpace: 'pre-wrap', wordBreak: 'break-word', overflow: 'visible' } : {}),
+                            ...stickyStyle,
                           }}>
                             <span style={s.roCell}>{val}</span>
                           </td>
@@ -390,7 +400,7 @@ export default function Government() {
                       }
                       if (col.opts) {
                         return (
-                          <td key={col.key} title={val} style={{ ...s.td, minWidth: col.w, maxWidth: col.w }}>
+                          <td key={col.key} title={val} style={{ ...s.td, minWidth: col.w, maxWidth: col.w, ...stickyStyle }}>
                             <select style={s.cellSelect} value={val} onChange={e => editCell(row.id, col.key, e.target.value, row)}>
                               {col.opts.map(o => <option key={o} value={o}>{o || ''}</option>)}
                             </select>
@@ -398,7 +408,7 @@ export default function Government() {
                         );
                       }
                       return (
-                        <td key={col.key} title={val} style={{ ...s.td, minWidth: col.w, maxWidth: col.w }}>
+                        <td key={col.key} title={val} style={{ ...s.td, minWidth: col.w, maxWidth: col.w, ...stickyStyle }}>
                           <input className="cell-input" style={s.cellInput} value={val} onChange={e => editCell(row.id, col.key, e.target.value, row)} />
                         </td>
                       );

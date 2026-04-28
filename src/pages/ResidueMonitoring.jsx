@@ -129,11 +129,13 @@ function computeRowErrors(rows) {
 
 const EMPTY_ERRS = {};
 
-const PreviewRow = memo(function PreviewRow({ row, isDiscard, rowErrs, toggleStatus, handleCellEdit }) {
+const PreviewRow = memo(function PreviewRow({ row, idx, isDiscard, rowErrs, toggleStatus, handleCellEdit }) {
   const hasErrs  = Object.keys(rowErrs).length > 0;
-  const stickyBg = isDiscard ? '#2a0f0f' : hasErrs ? '#1a1500' : '#0b1e38';
+  const isOdd    = idx % 2 === 1;
+  const stickyBg = isDiscard ? '#fde7e9' : hasErrs ? '#fff4ce' : (isOdd ? '#e8e7e5' : '#f3f2f1');
+  const rowBg    = isDiscard ? 'rgba(239,68,68,0.07)' : (isOdd ? '#fafafa' : '#ffffff');
   return (
-    <tr style={{ background: isDiscard ? 'rgba(239,68,68,0.07)' : 'transparent' }}>
+    <tr style={{ background: rowBg }}>
       <td style={{ ...s.td, ...s.stickyCol1, background: stickyBg, textAlign: 'center', padding: '3px 4px' }}>
         <button onClick={() => toggleStatus(row.id)} style={isDiscard ? s.btnRowDiscard : s.btnRowCommit}>
           {isDiscard ? '✗ Discard' : '✓ Commit'}
@@ -169,7 +171,7 @@ const PreviewRow = memo(function PreviewRow({ row, isDiscard, rowErrs, toggleSta
           >
             <input
               className="cell-input"
-              style={{ ...s.cellInput, color: errMsg ? '#fca5a5' : '#e2e8f0' }}
+              style={{ ...s.cellInput, color: errMsg ? '#a4262c' : '#323130' }}
               value={row[col.key] || ''}
               onChange={e => handleCellEdit(row.id, col.key, e.target.value)}
             />
@@ -285,6 +287,44 @@ export default function ResidueMonitoring() {
     }
     setSavingId(null);
   }, [pendingEdits, user]);
+
+  const saveAllViewEdits = useCallback(async () => {
+    const ids = Object.keys(pendingEdits);
+    if (ids.length === 0) return;
+    setSavingId('__all__');
+    setViewError('');
+    try {
+      for (const idStr of ids) {
+        const id = Number(idStr);
+        const edits = pendingEdits[id];
+        if (!edits || Object.keys(edits).length === 0) continue;
+        const row = committedRows.find(r => r.id === id);
+        if (!row) continue;
+        const changedFields = Object.keys(edits);
+        const oldVals = {};
+        const newVals = {};
+        changedFields.forEach(f => { oldVals[f] = row[f] || ''; newVals[f] = edits[f]; });
+        const merged = { ...row, ...edits,
+          modified_by: user?.name || user?.username || '',
+          modified_time: new Date().toLocaleString(),
+          modified_fields: changedFields.join(', '),
+          old_values: JSON.stringify(oldVals),
+          new_values: JSON.stringify(newVals),
+        };
+        const res = await fetch(`/api/residue/committed/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(merged),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.message || `Failed to save row ${id}`); }
+        setCommittedRows(prev => prev.map(r => r.id === id ? merged : r));
+        setPendingEdits(prev => { const next = { ...prev }; delete next[id]; return next; });
+      }
+    } catch (err) {
+      setViewError('Save failed: ' + err.message);
+    }
+    setSavingId(null);
+  }, [pendingEdits, committedRows, user]);
 
   const exportCommittedExcel = async () => {
     try {
@@ -529,7 +569,8 @@ export default function ResidueMonitoring() {
 
       <div style={s.content}>
 
-        {/* Upload card */}
+        {/* Upload card — hidden while reviewing uploaded data or browsing committed data */}
+        {step !== 'preview' && !viewOpen && (
         <div style={s.card}>
           <h2 style={s.cardTitle}>📤 Upload New Data</h2>
           <p style={s.cardDesc}>Download the official template, fill it in, then upload for review before saving.</p>
@@ -566,10 +607,11 @@ export default function ResidueMonitoring() {
           {error      && <div style={s.errorMsg}>{error}</div>}
           {successMsg && <div style={s.successMsg}>✅ {successMsg}</div>}
         </div>
+        )}
 
         {/* Preview + edit */}
         {step === 'preview' && localRows.length > 0 && (
-          <div style={s.card}>
+          <div style={s.tableCard}>
             {/* Toolbar */}
             <div style={s.toolbar}>
               <div style={s.toolbarLeft}>
@@ -628,6 +670,7 @@ export default function ResidueMonitoring() {
                 &nbsp;Use <strong>⚠ Show Errors</strong> to filter them, fix the highlighted cells, then commit.
               </div>
             )}
+            {error && <div style={{ ...s.errorMsg, marginBottom: '10px', marginTop: 0 }}>{error}</div>}
 
             {/* Table (paginated client-side for performance) */}
             {(() => {
@@ -652,10 +695,10 @@ export default function ResidueMonitoring() {
                     <table style={s.table}>
                       <thead>
                         <tr>
-                          <th style={{ ...s.th, ...s.stickyCol1, width: 90, zIndex: 6, top: 0 }}>
+                          <th style={{ ...s.th, ...s.stickyCol1, width: 90, zIndex: 6, top: 0, background: '#0078d4' }}>
                             <div style={s.thLabel}>Status</div>
                           </th>
-                          <th style={{ ...s.th, ...s.stickyCol2, zIndex: 6, top: 0 }}>
+                          <th style={{ ...s.th, ...s.stickyCol2, zIndex: 6, top: 0, background: '#0078d4' }}>
                             <div style={s.thLabel}>Unique Key</div>
                             <input
                               style={s.thSearch}
@@ -669,7 +712,7 @@ export default function ResidueMonitoring() {
                             const hasFilter = !!(colFilters[col.key] || '').trim();
                             const isRequired = !!(RULES[col.key]?.required);
                             return (
-                              <th key={col.key} style={{ ...s.th, top: 0, background: hasFilter ? '#1a3a80' : '#0b1e45' }}>
+                              <th key={col.key} style={{ ...s.th, top: 0, background: hasFilter ? '#106ebe' : '#0078d4' }}>
                                 <div style={s.thLabel}>
                                   {col.label}
                                   {isRequired && <span style={s.requiredDot} title="Required">*</span>}
@@ -687,10 +730,11 @@ export default function ResidueMonitoring() {
                         </tr>
                       </thead>
                       <tbody>
-                        {pageRows.map((row) => (
+                        {pageRows.map((row, idx) => (
                           <PreviewRow
                             key={row.id}
                             row={row}
+                            idx={idx}
                             isDiscard={rowStatus[row.id] === 'discard'}
                             rowErrs={rowErrors[row.id] || EMPTY_ERRS}
                             toggleStatus={toggleStatus}
@@ -783,16 +827,29 @@ export default function ResidueMonitoring() {
             clearTimeout(viewFilterTimer.current);
             viewFilterTimer.current = setTimeout(() => { setViewPage(1); loadCommitted(1); }, 400);
           };
+          const pendingCount = Object.keys(pendingEdits).length;
           return (
-          <div style={s.card}>
+          <div style={s.tableCard}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: 8 }}>
-              <div>
-                <h2 style={{ ...s.cardTitle, marginBottom: 2 }}>Committed Residue Monitoring Data</h2>
-                {!viewLoading && !viewError && (
-                  <span style={s.metaChip}>{committedTotal} total records (page {viewPage} of {totalPages})</span>
-                )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button onClick={toggleView} style={s.btnOutline}>← Back</button>
+                <div>
+                  <h2 style={{ ...s.cardTitle, marginBottom: 2 }}>Committed Residue Monitoring Data</h2>
+                  {!viewLoading && !viewError && (
+                    <span style={s.metaChip}>{committedTotal} total records (page {viewPage} of {totalPages})</span>
+                  )}
+                </div>
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {pendingCount > 0 && (
+                  <button
+                    onClick={saveAllViewEdits}
+                    style={s.btnSuccess}
+                    disabled={savingId !== null}
+                  >
+                    {savingId === '__all__' ? 'Saving…' : `Save ${pendingCount} Change${pendingCount !== 1 ? 's' : ''}`}
+                  </button>
+                )}
                 <button onClick={() => setShowAuditLog(true)} style={s.btnOutline}>Change Log</button>
                 <button onClick={exportCommittedExcel} style={s.btnExport}>Export Excel</button>
                 <button onClick={() => loadCommitted()} style={s.btnOutline} disabled={viewLoading}>
@@ -811,10 +868,7 @@ export default function ResidueMonitoring() {
                   <table style={s.table}>
                     <thead>
                       <tr>
-                        <th style={{ ...s.th, ...s.stickyCol1View, top: 0, zIndex: 6 }}>
-                          <div style={s.thLabel}>Save</div>
-                        </th>
-                        <th style={{ ...s.th, ...s.stickyCol2View, top: 0, zIndex: 6 }}>
+                        <th style={{ ...s.th, ...s.stickyCol2View, top: 0, zIndex: 6, background: '#0078d4' }}>
                           <div style={s.thLabel}>Unique Key</div>
                         </th>
                         {VIEW_COLS.map(col => {
@@ -835,23 +889,14 @@ export default function ResidueMonitoring() {
                       </tr>
                     </thead>
                     <tbody>
-                      {committedRows.map((row) => {
+                      {committedRows.map((row, idx) => {
                         const edits = pendingEdits[row.id] || {};
                         const hasEdits = Object.keys(edits).length > 0;
-                        const stickyBg = hasEdits ? '#fff4ce' : '#f3f2f1';
+                        const isOdd = idx % 2 === 1;
+                        const stickyBg = hasEdits ? '#fff4ce' : (isOdd ? '#e8e7e5' : '#f3f2f1');
+                        const rowBg = isOdd ? '#fafafa' : '#ffffff';
                         return (
-                          <tr key={row.id}>
-                            <td style={{ ...s.td, ...s.stickyCol1View, background: stickyBg, textAlign: 'center' }}>
-                              {hasEdits && (
-                                <button
-                                  onClick={() => saveViewRow(row)}
-                                  style={s.btnSave}
-                                  disabled={savingId === row.id}
-                                >
-                                  {savingId === row.id ? '...' : 'Save'}
-                                </button>
-                              )}
-                            </td>
+                          <tr key={row.id} style={{ background: rowBg }}>
                             <td style={{ ...s.td, ...s.stickyCol2View, background: stickyBg }}>
                               <span style={s.keyCell}>
                                 <span style={s.keyPart}>{row.species}</span>
@@ -867,7 +912,7 @@ export default function ResidueMonitoring() {
                               const val = edits[col.key] !== undefined ? edits[col.key] : (row[col.key] ?? '');
                               const isModified = edits[col.key] !== undefined;
                               return (
-                                <td key={col.key} style={{ ...s.td, background: isModified ? '#fff4ce' : '#ffffff' }}>
+                                <td key={col.key} style={{ ...s.td, background: isModified ? '#fff4ce' : 'transparent' }}>
                                   <input
                                     className="cell-input"
                                     style={{ ...s.cellInput, color: isModified ? '#8a6914' : '#323130' }}
@@ -938,18 +983,19 @@ const s = {
   avatar:      { width: '32px', height: '32px', borderRadius: '50%', background: '#005a9e', color: '#ffffff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '0.88rem', cursor: 'pointer', border: '2px solid rgba(255,255,255,0.4)' },
   signOutBtn:  { background: 'transparent', border: '1px solid rgba(255,255,255,0.5)', color: '#ffffff', padding: '4px 12px', borderRadius: '2px', fontSize: '0.82rem', cursor: 'pointer', width: 'auto', margin: 0 },
   content: { padding: '10px 16px', width: '100%', display: 'flex', flexDirection: 'column', gap: '10px', flex: 1, minHeight: 0, overflow: 'hidden' },
-  card: { background: '#ffffff', border: '1px solid #edebe9', borderRadius: '4px', padding: '22px 28px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)' },
+  card: { background: '#ffffff', border: '1px solid #edebe9', borderRadius: '4px', padding: '14px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', flexShrink: 0 },
+  tableCard: { background: '#ffffff', border: '1px solid #edebe9', borderRadius: '4px', padding: '12px 16px', boxShadow: '0 1px 4px rgba(0,0,0,0.08)', display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 },
   cardTitle: { margin: '0 0 6px', color: '#323130', fontSize: '1.1rem', fontWeight: 600 },
   cardDesc: { margin: '0 0 16px', color: '#605e5c', fontSize: '0.85rem', lineHeight: 1.5 },
   actionRow: { display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' },
   btnPrimary: { background: '#0078d4', border: 'none', color: '#ffffff', borderRadius: '2px', padding: '9px 20px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', width: 'auto' },
   btnOutline: { background: '#ffffff', border: '1px solid #0078d4', color: '#0078d4', borderRadius: '2px', padding: '9px 20px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', width: 'auto' },
-  btnSuccess: { background: '#107c10', border: 'none', color: '#ffffff', borderRadius: '2px', padding: '9px 20px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', width: 'auto', transition: 'opacity 150ms' },
-  btnDanger:  { background: '#fde7e9', border: '1px solid #f1707b', color: '#a4262c', borderRadius: '2px', padding: '8px 16px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', width: 'auto' },
-  btnMarkCommit:  { background: '#dff6dd', border: '1px solid #107c10', color: '#107c10', borderRadius: '2px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto' },
-  btnMarkDiscard: { background: '#fde7e9', border: '1px solid #f1707b', color: '#a4262c', borderRadius: '2px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto' },
-  btnFilter:       { background: '#fff4ce', border: '1px solid #f7c948', color: '#8a6914', borderRadius: '2px', padding: '6px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto' },
-  btnFilterActive: { background: '#f7c948', border: '1px solid #d39300', color: '#3d2900', borderRadius: '2px', padding: '6px 12px', cursor: 'pointer', fontWeight: 700, fontSize: '0.78rem', width: 'auto' },
+  btnSuccess: { background: '#107c10', border: '1px solid #107c10', color: '#ffffff', borderRadius: '2px', height: '32px', padding: '0 16px', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', width: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', transition: 'opacity 150ms', boxSizing: 'border-box', lineHeight: 1 },
+  btnDanger:  { background: '#fde7e9', border: '1px solid #f1707b', color: '#a4262c', borderRadius: '2px', height: '32px', padding: '0 14px', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', width: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', lineHeight: 1 },
+  btnMarkCommit:  { background: '#dff6dd', border: '1px solid #107c10', color: '#107c10', borderRadius: '2px', height: '32px', padding: '0 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', width: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', lineHeight: 1 },
+  btnMarkDiscard: { background: '#fde7e9', border: '1px solid #f1707b', color: '#a4262c', borderRadius: '2px', height: '32px', padding: '0 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', width: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', lineHeight: 1 },
+  btnFilter:       { background: '#fff4ce', border: '1px solid #f7c948', color: '#8a6914', borderRadius: '2px', height: '32px', padding: '0 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem', width: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', lineHeight: 1 },
+  btnFilterActive: { background: '#f7c948', border: '1px solid #d39300', color: '#3d2900', borderRadius: '2px', height: '32px', padding: '0 12px', cursor: 'pointer', fontWeight: 700, fontSize: '0.82rem', width: 'auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', lineHeight: 1 },
   fileLabel: { marginTop: '10px', color: '#605e5c', fontSize: '0.82rem' },
   errorMsg:   { color: '#a4262c', fontSize: '0.85rem', marginTop: '10px', background: '#fde7e9', border: '1px solid #f1707b', borderRadius: '2px', padding: '9px 14px' },
   successMsg: { color: '#107c10', fontSize: '0.9rem',  marginTop: '10px', background: '#dff6dd', border: '1px solid #107c10', borderRadius: '2px', padding: '9px 14px' },
@@ -959,13 +1005,13 @@ const s = {
   toolbarRight:{ display: 'flex', alignItems: 'center', gap: '7px', flexWrap: 'wrap' },
   toolbarMeta: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
   metaChip: { fontSize: '0.75rem', padding: '2px 8px', borderRadius: '2px', background: '#f3f2f1', border: '1px solid #edebe9', color: '#323130' },
-  select: { background: '#ffffff', border: '1px solid #8a8886', color: '#323130', borderRadius: '2px', padding: '6px 10px', fontSize: '0.82rem', width: 'auto', cursor: 'pointer' },
-  tableWrap: { overflowX: 'auto', overflowY: 'auto', flex: 1, minHeight: 0, borderRadius: '2px', border: '1px solid #edebe9' },
+  select: { background: '#ffffff', border: '1px solid #8a8886', color: '#323130', borderRadius: '2px', height: '32px', padding: '0 10px', fontSize: '0.82rem', width: 'auto', cursor: 'pointer', boxSizing: 'border-box', lineHeight: 1 },
+  tableWrap: { overflowX: 'auto', overflowY: 'auto', flex: 1, minHeight: 0, borderRadius: '2px', border: '1px solid #edebe9', position: 'relative' },
   table: { borderCollapse: 'collapse', fontSize: '0.65rem', width: 'max-content', minWidth: '100%' },
   th: {
     background: '#0078d4',
     color: '#ffffff', padding: '6px 8px 4px', textAlign: 'left',
-    whiteSpace: 'nowrap', fontWeight: 700,
+    whiteSpace: 'normal', wordBreak: 'break-word', fontWeight: 700,
     borderRight: '1px solid rgba(255,255,255,0.2)',
     borderBottom: '2px solid #005a9e',
     position: 'sticky', top: 0, zIndex: 3,
@@ -988,8 +1034,7 @@ const s = {
   errBadge: { color: '#8a6914', fontSize: '0.65rem', marginTop: '2px', cursor: 'help' },
   btnRowCommit:  { background: '#107c10', border: 'none', color: '#ffffff', borderRadius: '2px', padding: '2px 6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.67rem', width: 'auto', whiteSpace: 'nowrap' },
   btnRowDiscard: { background: '#fde7e9', border: '1px solid #f1707b', color: '#a4262c', borderRadius: '2px', padding: '2px 6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.67rem', width: 'auto', whiteSpace: 'nowrap' },
-  stickyCol1View: { position: 'sticky', left: 0,      zIndex: 4, minWidth: '60px',  maxWidth: '60px',  borderRight: '2px solid #edebe9', background: '#f3f2f1' },
-  stickyCol2View: { position: 'sticky', left: '60px', zIndex: 4, minWidth: '280px', maxWidth: '280px', borderRight: '2px solid #edebe9', background: '#f3f2f1' },
+  stickyCol2View: { position: 'sticky', left: 0, zIndex: 4, minWidth: '280px', maxWidth: '280px', borderRight: '2px solid #edebe9', background: '#f3f2f1' },
   btnSave: { background: '#107c10', border: 'none', color: '#ffffff', borderRadius: '2px', padding: '2px 8px', cursor: 'pointer', fontWeight: 600, fontSize: '0.67rem', width: 'auto', whiteSpace: 'nowrap' },
   btnExport: { background: '#0078d4', border: 'none', color: '#ffffff', borderRadius: '2px', padding: '9px 20px', cursor: 'pointer', fontWeight: 600, fontSize: '0.88rem', width: 'auto' },
   pageBtn: { background: '#ffffff', border: '1px solid #8a8886', color: '#0078d4', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto' },
