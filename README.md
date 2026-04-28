@@ -299,6 +299,8 @@ Each table follows the same REST pattern:
 - **Add new entry** modal with field validation
 - **Delete** with confirmation dialog
 - **Export to styled Excel** with formatted headers and alternating row colours
+- **Frozen primary name column** on every Master Database table (Registered Abattoirs / Transformation / Government / Industry / Associated Members) — the row's identifier stays anchored to the left while you scroll horizontally
+- **Zebra-striped rows** across body and sticky columns for easier scanning
 
 ### Audit Trail
 - Every edit writes to the central `AuditLog` table with: who, when, which fields, old values, new values
@@ -312,6 +314,24 @@ Each table follows the same REST pattern:
 - **Breakdown Report** — aggregated view with sortable columns
 - **Analytics dashboard** — KPI cards + charts (monthly volume, province, species, ethnicity, age, race & gender)
 - **Analytics PDF export** — screenshot-to-PDF via html2canvas + jsPDF
+
+### Residue Monitoring Report
+- **Download Template** — official Excel template with the expected column layout
+- **Upload Excel File** — uploaded rows land in a temporary staging batch with a progress indicator and cancel button
+- **Verify Data Before Saving** — full-screen review table:
+  - Per-row Commit / Discard toggle, plus All Commit / All Discard bulk actions
+  - Inline cell editing with live validation (required fields, enums, `dd/mm/yyyy` dates)
+  - Highlights rows with errors and offers a Show Errors filter; commit is blocked while any non-discarded row has validation errors
+  - Filter by species and search across the unique key (species · sample ref · date · sample type)
+  - Client-side pagination at 100 rows per page for large uploads
+  - The Upload card auto-hides during review so the table fills the viewport; returns on Cancel or Commit
+- **View Committed Data** — browse-and-edit view over the committed `ResidueMonitoring` table:
+  - Per-column search with debounced server-side filtering, server-side pagination at 100 rows per page
+  - Inline cell editing with a sticky toolbar **Save N Changes** button that persists every pending row in one batch
+  - Frozen Unique Key column for horizontal-scroll context
+  - Export current filtered view to styled Excel
+  - Change Log modal with full audit trail
+  - Back button returns to the upload view
 
 ### Quotation System (Finances page)
 - Select client from Registered Abattoirs (or add custom)
