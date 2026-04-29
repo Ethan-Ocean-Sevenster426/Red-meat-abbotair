@@ -74,11 +74,47 @@ def modify_xlsx_cells(xlsx_bytes: bytes, cell_updates: dict) -> bytes:
     with zipfile.ZipFile(BytesIO(xlsx_bytes), 'r') as src:
         with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as dst:
             for item in src.namelist():
+                # Drop cached calc chain so LibreOffice/Excel recalculates formulas
+                if item == 'xl/calcChain.xml':
+                    continue
                 content = src.read(item)
                 if item == 'xl/worksheets/sheet1.xml':
-                    content = _apply_cell_updates(content.decode('utf-8'), cell_updates).encode('utf-8')
+                    xml = _apply_cell_updates(content.decode('utf-8'), cell_updates)
+                    xml = _strip_formula_cache(xml)
+                    content = xml.encode('utf-8')
+                elif item == 'xl/workbook.xml':
+                    content = _force_recalc(content.decode('utf-8')).encode('utf-8')
+                elif item == '[Content_Types].xml':
+                    content = content.decode('utf-8').replace(
+                        '<Override PartName="/xl/calcChain.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.calcChain+xml"/>',
+                        '',
+                    ).encode('utf-8')
                 dst.writestr(item, content)
     return out.getvalue()
+
+
+def _strip_formula_cache(xml: str) -> str:
+    """Remove cached <v> values from formula cells so LibreOffice/Excel recomputes."""
+    import re
+    return re.sub(
+        r'(<c\s+[^>]*?>\s*<f[^>]*>[^<]*</f>)\s*<v>[^<]*</v>',
+        r'\1',
+        xml,
+    )
+
+
+def _force_recalc(workbook_xml: str) -> str:
+    import re
+    if '<calcPr' in workbook_xml:
+        if 'fullCalcOnLoad' in workbook_xml:
+            workbook_xml = re.sub(r'fullCalcOnLoad="[^"]*"', 'fullCalcOnLoad="1"', workbook_xml)
+        else:
+            workbook_xml = re.sub(r'<calcPr', '<calcPr fullCalcOnLoad="1"', workbook_xml, count=1)
+    else:
+        workbook_xml = workbook_xml.replace(
+            '</workbook>', '<calcPr fullCalcOnLoad="1"/></workbook>', 1,
+        )
+    return workbook_xml
 
 
 def _apply_cell_updates(xml: str, cells: dict) -> str:
@@ -129,11 +165,16 @@ def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53',
             f.write(xlsx_buffer)
 
         soffice = shutil.which('libreoffice') or shutil.which('soffice')
+        if not soffice and sys.platform == 'win32':
+            for p in (r'C:\Program Files\LibreOffice\program\soffice.exe',
+                      r'C:\Program Files (x86)\LibreOffice\program\soffice.exe'):
+                if os.path.exists(p):
+                    soffice = p
+                    break
         if not soffice:
             raise RuntimeError(
                 'LibreOffice not found. Install it (apt-get install libreoffice on '
-                'Linux, or download from libreoffice.org on Windows) and ensure '
-                '`soffice` or `libreoffice` is on PATH.'
+                'Linux, or download from libreoffice.org on Windows).'
             )
         result = subprocess.run(
             [soffice, '--headless', '--convert-to', 'pdf',
