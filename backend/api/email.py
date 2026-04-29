@@ -59,77 +59,89 @@ def _graph_post(path: str, json_body: dict, token: str, extra_headers: dict | No
     )
 
 
+def modify_xlsx_cells(xlsx_bytes: bytes, cell_updates: dict) -> bytes:
+    """Apply cell value updates to an xlsx via direct XML edits.
+
+    Preserves all embedded assets (images, drawings, page setup, formatting,
+    formulas in untouched cells) — unlike openpyxl which strips drawings on
+    save. cell_updates is a dict of cell_ref -> value (str/int/float/None).
+    """
+    import zipfile
+    import re
+    from io import BytesIO
+
+    out = BytesIO()
+    with zipfile.ZipFile(BytesIO(xlsx_bytes), 'r') as src:
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as dst:
+            for item in src.namelist():
+                content = src.read(item)
+                if item == 'xl/worksheets/sheet1.xml':
+                    content = _apply_cell_updates(content.decode('utf-8'), cell_updates).encode('utf-8')
+                dst.writestr(item, content)
+    return out.getvalue()
+
+
+def _apply_cell_updates(xml: str, cells: dict) -> str:
+    import re
+    for cell_ref, value in cells.items():
+        pattern = re.compile(
+            rf'<c\s+r="{re.escape(cell_ref)}"([^>]*?)(/>|>.*?</c>)',
+            re.DOTALL,
+        )
+        m = pattern.search(xml)
+        if not m:
+            continue
+        attrs = re.sub(r'\s*t="[^"]*"', '', m.group(1) or '')
+        if value is None or value == '':
+            new_cell = f'<c r="{cell_ref}"{attrs}/>'
+        elif isinstance(value, (int, float)):
+            new_cell = f'<c r="{cell_ref}"{attrs}><v>{value}</v></c>'
+        else:
+            v = (str(value).replace('&', '&amp;').replace('<', '&lt;')
+                 .replace('>', '&gt;').replace('"', '&quot;'))
+            new_cell = f'<c r="{cell_ref}"{attrs} t="inlineStr"><is><t xml:space="preserve">{v}</t></is></c>'
+        xml = xml[:m.start()] + new_cell + xml[m.end():]
+    return xml
+
+
 def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53',
                          setup_page: bool = False) -> bytes:
-    """Convert Excel to PDF. Uses win32com on Windows, LibreOffice on Linux.
+    """Convert Excel to PDF using LibreOffice (cross-platform).
 
     setup_page: when True, bakes print-area/fit-to-page into the file before
-    converting (used for generated quotations). Leave False for user-uploaded
-    files so embedded images are preserved as-is.
+    converting. Skipped for user-uploaded files so embedded images remain
+    as authored. Requires `libreoffice` (or `soffice`) on PATH.
     """
     import sys
     import tempfile
     import os
+    import shutil
     import subprocess
 
     tmp_xlsx = os.path.join(tempfile.gettempdir(), f'_stt_{int(time.time() * 1000)}.xlsx')
     tmp_pdf = tmp_xlsx.replace('.xlsx', '.pdf')
 
     try:
+        if setup_page:
+            xlsx_buffer = _bake_page_setup(xlsx_buffer, print_area)
+
         with open(tmp_xlsx, 'wb') as f:
             f.write(xlsx_buffer)
 
-        if sys.platform == 'win32':
-            import win32com.client
-            import pythoncom
-            pythoncom.CoInitialize()
-            excel = win32com.client.Dispatch('Excel.Application')
-            excel.Visible = False
-            excel.DisplayAlerts = False
-            try:
-                wb = excel.Workbooks.Open(os.path.abspath(tmp_xlsx), ReadOnly=True)
-                ws = wb.Worksheets(1)
-                ws.PageSetup.Zoom = False
-                ws.PageSetup.FitToPagesWide = 1
-                ws.PageSetup.FitToPagesTall = 1
-                ws.PageSetup.Orientation = 1
-                ws.PageSetup.PaperSize = 9
-                ws.PageSetup.PrintArea = print_area
-                ws.PageSetup.LeftMargin = excel.InchesToPoints(0.2)
-                ws.PageSetup.RightMargin = excel.InchesToPoints(0.2)
-                ws.PageSetup.TopMargin = excel.InchesToPoints(0.2)
-                ws.PageSetup.BottomMargin = excel.InchesToPoints(0.2)
-                ws.PageSetup.HeaderMargin = excel.InchesToPoints(0.1)
-                ws.PageSetup.FooterMargin = excel.InchesToPoints(0.1)
-                wb.ExportAsFixedFormat(0, os.path.abspath(tmp_pdf))
-                wb.Close(False)
-            finally:
-                excel.Quit()
-                pythoncom.CoUninitialize()
-        else:
-            if setup_page:
-                from openpyxl import load_workbook
-                from openpyxl.worksheet.page import PageMargins
-                wb_obj = load_workbook(tmp_xlsx)
-                ws_obj = wb_obj.active
-                ws_obj.print_area = print_area
-                ws_obj.page_setup.orientation = 'portrait'
-                ws_obj.page_setup.paperSize = ws_obj.PAPERSIZE_A4
-                ws_obj.page_setup.fitToWidth = 1
-                ws_obj.page_setup.fitToHeight = 1
-                ws_obj.page_setup.fitToPage = True
-                ws_obj.page_margins = PageMargins(
-                    left=0.2, right=0.2, top=0.2, bottom=0.2,
-                    header=0.1, footer=0.1,
-                )
-                wb_obj.save(tmp_xlsx)
-            result = subprocess.run(
-                ['libreoffice', '--headless', '--convert-to', 'pdf',
-                 '--outdir', tempfile.gettempdir(), tmp_xlsx],
-                capture_output=True, timeout=60,
+        soffice = shutil.which('libreoffice') or shutil.which('soffice')
+        if not soffice:
+            raise RuntimeError(
+                'LibreOffice not found. Install it (apt-get install libreoffice on '
+                'Linux, or download from libreoffice.org on Windows) and ensure '
+                '`soffice` or `libreoffice` is on PATH.'
             )
-            if result.returncode != 0:
-                raise RuntimeError(result.stderr.decode())
+        result = subprocess.run(
+            [soffice, '--headless', '--convert-to', 'pdf',
+             '--outdir', tempfile.gettempdir(), tmp_xlsx],
+            capture_output=True, timeout=90,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(result.stderr.decode() or result.stdout.decode())
 
         with open(tmp_pdf, 'rb') as f:
             return f.read()
@@ -139,6 +151,72 @@ def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53',
                 os.unlink(p)
             except OSError:
                 pass
+
+
+def _bake_page_setup(xlsx_bytes: bytes, print_area: str) -> bytes:
+    """Set fit-to-page/A4/portrait/print-area in xlsx via direct XML edits.
+
+    Avoids openpyxl round-trip so embedded drawings/images survive.
+    """
+    import zipfile
+    import re
+    from io import BytesIO
+
+    out = BytesIO()
+    with zipfile.ZipFile(BytesIO(xlsx_bytes), 'r') as src:
+        with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as dst:
+            for item in src.namelist():
+                content = src.read(item)
+                if item == 'xl/worksheets/sheet1.xml':
+                    content = _inject_page_setup(content.decode('utf-8'), print_area).encode('utf-8')
+                elif item == 'xl/workbook.xml':
+                    content = _inject_print_area(content.decode('utf-8'), print_area).encode('utf-8')
+                dst.writestr(item, content)
+    return out.getvalue()
+
+
+def _inject_page_setup(xml: str, print_area: str) -> str:
+    import re
+    # pageSetup: A4 (paperSize=9), portrait, fit-to-1-page
+    page_setup = ('<pageSetup paperSize="9" fitToWidth="1" fitToHeight="1" '
+                  'orientation="portrait"/>')
+    # sheetPr/pageSetUpPr: enable fit-to-page
+    fit_pr = '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
+    # pageMargins: tight
+    margins = ('<pageMargins left="0.2" right="0.2" top="0.2" bottom="0.2" '
+               'header="0.1" footer="0.1"/>')
+    # Replace existing tags or insert near </worksheet>
+    xml = re.sub(r'<sheetPr[^>]*>.*?</sheetPr>|<sheetPr[^/]*/>', fit_pr, xml, count=1, flags=re.DOTALL)
+    if '<sheetPr' not in xml:
+        xml = xml.replace('<dimension', fit_pr + '<dimension', 1)
+    xml = re.sub(r'<pageSetup[^/]*/>', page_setup, xml, count=1)
+    if '<pageSetup' not in xml:
+        xml = xml.replace('</worksheet>', page_setup + '</worksheet>', 1)
+    xml = re.sub(r'<pageMargins[^/]*/>', margins, xml, count=1)
+    if '<pageMargins' not in xml:
+        xml = xml.replace('</worksheet>', margins + '</worksheet>', 1)
+    return xml
+
+
+def _inject_print_area(workbook_xml: str, print_area: str) -> str:
+    import re
+    # Print area is a defined name "_xlnm.Print_Area" scoped to sheet
+    # localSheetId=0 means first sheet
+    target = f"Sheet1!{print_area}"
+    pa = (f'<definedName name="_xlnm.Print_Area" localSheetId="0">'
+          f'{target}</definedName>')
+    if '_xlnm.Print_Area' in workbook_xml:
+        workbook_xml = re.sub(
+            r'<definedName name="_xlnm\.Print_Area"[^>]*>[^<]*</definedName>',
+            pa, workbook_xml, count=1,
+        )
+    elif '<definedNames>' in workbook_xml:
+        workbook_xml = workbook_xml.replace('<definedNames>', f'<definedNames>{pa}', 1)
+    elif '</workbook>' in workbook_xml:
+        workbook_xml = workbook_xml.replace(
+            '</workbook>', f'<definedNames>{pa}</definedNames></workbook>', 1,
+        )
+    return workbook_xml
 
 
 def _send_mail(message: dict) -> dict:

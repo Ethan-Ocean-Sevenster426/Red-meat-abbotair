@@ -1226,95 +1226,85 @@ def quotation_abattoir_details_view(request):
 
 @api_view(['POST'])
 def quotation_generate_view(request):
-    import openpyxl
     data = request.data or {}
     template_path = Path(settings.PROJECT_ROOT) / 'Quotation Template.xlsx'
     if not template_path.exists():
         return Response({'message': 'Template not found'}, status=500)
 
     try:
-        wb = openpyxl.load_workbook(template_path)
-        ws = wb.worksheets[0]
+        with open(template_path, 'rb') as f:
+            template_bytes = f.read()
 
         today = datetime.now()
         date_str = today.strftime('%d/%m/%Y')
-        ws['D2'] = f"Training and Support Services Contract {today.year}"
-        ws['A2'] = f"QUOTATION DATE: {date_str}"
-
-        def set_merged(row_n, val):
-            ws[f'D{row_n}'] = val
-
-        set_merged(3, data.get('clientName') or '')
-        set_merged(4, data.get('rmaaMember') or '')
-        set_merged(5, data.get('rc') or '')
-        set_merged(6, data.get('throughput') or '')
-        set_merged(7, data.get('vatNumber') or '')
-        set_merged(9, data.get('clientContact') or '')
-        set_merged(10, data.get('telephone') or '')
-        set_merged(12, data.get('cell') or '')
-        set_merged(13, data.get('email') or '')
-        set_merged(14, data.get('postalAddress') or '')
-        set_merged(15, data.get('streetAddress') or '')
-        set_merged(16, data.get('rmaaContact') or '')
 
         def safe_float(v):
-            try: return float(v) if v else ''
-            except (ValueError, TypeError): return ''
+            try: return float(v) if v else None
+            except (ValueError, TypeError): return None
 
-        # Line items (B22-H26, up to 5 lines)
-        items = data.get('lineItems') or []
-        for i, item in enumerate(items):
+        cell_updates = {
+            'D2': f"Training and Support Services Contract {today.year}",
+            'A2': f"QUOTATION DATE: {date_str}",
+            'D3': data.get('clientName') or '',
+            'D4': data.get('rmaaMember') or '',
+            'D5': data.get('rc') or '',
+            'D6': data.get('throughput') or '',
+            'D7': data.get('vatNumber') or '',
+            'D9': data.get('clientContact') or '',
+            'D10': data.get('telephone') or '',
+            'D12': data.get('cell') or '',
+            'D13': data.get('email') or '',
+            'D14': data.get('postalAddress') or '',
+            'D15': data.get('streetAddress') or '',
+            'D16': data.get('rmaaContact') or '',
+        }
+
+        # Line items (rows 22-26, up to 5)
+        for i, item in enumerate(data.get('lineItems') or []):
             row = 22 + i
             if row > 26:
                 break
-            # B: Date in long format
             try:
                 d = datetime.fromisoformat(item.get('date')) if item.get('date') else None
-                ws[f'B{row}'] = d.strftime('%A, %B %d, %Y') if d else ''
+                cell_updates[f'B{row}'] = d.strftime('%A, %B %d, %Y') if d else ''
             except (ValueError, TypeError):
-                ws[f'B{row}'] = item.get('date') or ''
-            # C: Skills Programme x Qty
+                cell_updates[f'B{row}'] = item.get('date') or ''
             skill = item.get('skillsProgramme') or ''
             qty = item.get('qty') or ''
-            ws[f'C{row}'] = f"{skill} x {qty}" if skill and qty else skill
-            # D: Skills Programme cost
+            cell_updates[f'C{row}'] = f"{skill} x {qty}" if skill and qty else skill
             pc = safe_float(item.get('programmeCost'))
             pq = int(item.get('qty') or 1) if item.get('qty') else 1
-            ws[f'D{row}'] = pc * pq if isinstance(pc, float) else ''
-            # E: Slaughter Technique x Qty
+            cell_updates[f'D{row}'] = pc * pq if pc is not None else ''
             slaught = item.get('slaughterTechnique') or ''
             sq = item.get('slaughterQty') or ''
-            ws[f'E{row}'] = f"{slaught} x {sq}" if slaught and sq else slaught
-            # F: Slaughter cost
+            cell_updates[f'E{row}'] = f"{slaught} x {sq}" if slaught and sq else slaught
             sc = safe_float(item.get('slaughterCost'))
             sqn = int(item.get('slaughterQty') or 1) if item.get('slaughterQty') else 1
-            ws[f'F{row}'] = sc * sqn if isinstance(sc, float) else ''
-            # G: Distance
-            ws[f'G{row}'] = safe_float(item.get('distance'))
-            # H: Accommodation
-            ws[f'H{row}'] = safe_float(item.get('accommodation'))
+            cell_updates[f'F{row}'] = sc * sqn if sc is not None else ''
+            cell_updates[f'G{row}'] = safe_float(item.get('distance')) or ''
+            cell_updates[f'H{row}'] = safe_float(item.get('accommodation')) or ''
 
         # Sampling (row 29)
         samp = data.get('sampling') or {}
         samp_qty = samp.get('qty') or ''
         samp_cost = safe_float(samp.get('cost'))
         if samp_qty:
-            ws['B29'] = f"Sampling x {samp_qty}"
-            ws['F29'] = samp_cost * int(samp_qty) if isinstance(samp_cost, float) else ''
-            ws['G29'] = safe_float(samp.get('distance'))
-            ws['H29'] = safe_float(samp.get('accommodation'))
+            cell_updates['B29'] = f"Sampling x {samp_qty}"
+            cell_updates['F29'] = samp_cost * int(samp_qty) if samp_cost is not None else ''
+            cell_updates['G29'] = safe_float(samp.get('distance')) or ''
+            cell_updates['H29'] = safe_float(samp.get('accommodation')) or ''
 
         # Audit Verification (row 30)
         aud = data.get('audit') or {}
         aud_qty = aud.get('qty') or ''
         aud_cost = safe_float(aud.get('cost'))
         if aud_qty:
-            ws['B30'] = f"Verification Audit x {aud_qty}"
-            ws['F30'] = aud_cost * int(aud_qty) if isinstance(aud_cost, float) else ''
-            ws['G30'] = safe_float(aud.get('distance'))
-            ws['H30'] = safe_float(aud.get('accommodation'))
+            cell_updates['B30'] = f"Verification Audit x {aud_qty}"
+            cell_updates['F30'] = aud_cost * int(aud_qty) if aud_cost is not None else ''
+            cell_updates['G30'] = safe_float(aud.get('distance')) or ''
+            cell_updates['H30'] = safe_float(aud.get('accommodation')) or ''
 
-        # Discount lines (rows 34-37) — only if discounts provided
+        # Discount lines (rows 34-37)
         disc = data.get('discounts')
         if disc:
             disc_rows = [
@@ -1328,15 +1318,12 @@ def quotation_generate_view(request):
                 km = safe_float(disc.get(km_key))
                 acc = safe_float(disc.get(acc_key))
                 if amt or km or acc:
-                    ws[f'D{row}'] = label
-                    ws[f'F{row}'] = -abs(amt) if isinstance(amt, float) else ''
-                    ws[f'G{row}'] = -abs(km) if isinstance(km, float) else ''
-                    ws[f'H{row}'] = -abs(acc) if isinstance(acc, float) else ''
+                    cell_updates[f'D{row}'] = label
+                    cell_updates[f'F{row}'] = -abs(amt) if amt is not None else ''
+                    cell_updates[f'G{row}'] = -abs(km) if km is not None else ''
+                    cell_updates[f'H{row}'] = -abs(acc) if acc is not None else ''
 
-        xlsx_buf = BytesIO()
-        wb.save(xlsx_buf)
-        xlsx_bytes = xlsx_buf.getvalue()
-
+        xlsx_bytes = email_svc.modify_xlsx_cells(template_bytes, cell_updates)
         pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$45', setup_page=True)
         folder = f"Quotation {date_str.replace('/', '-')} {sanitize_fs_name(data.get('clientName'))}"
         return Response({
