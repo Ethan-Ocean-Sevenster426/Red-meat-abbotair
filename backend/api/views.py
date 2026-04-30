@@ -491,8 +491,9 @@ def abattoir_send_form_view(request, pk):
         return Response({'message': f'Failed to build form: {e}'}, status=500)
 
     filename = f"RMAA Database Form - {row['abattoir_name'] or 'Abattoir'}.docx"
+    recipient = (request.data.get('to') if request.data else None) or 'training@rmaa.co.za'
     result = email_svc.send_database_form(
-        to='training@rmaa.co.za',
+        to=recipient,
         abattoir_name=row['abattoir_name'] or 'Unknown Abattoir',
         training_email=row.get('training_email') or '',
         doc_buffer=doc_bytes,
