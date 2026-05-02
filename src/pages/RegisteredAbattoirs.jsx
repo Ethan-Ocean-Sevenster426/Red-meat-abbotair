@@ -508,11 +508,20 @@ export default function RegisteredAbattoirs() {
                             <button
                               style={{ ...s.formBtn, ...(status === 'sent' ? s.formBtnSent : status === 'error' ? s.formBtnError : {}), ...(status === 'sending' ? { opacity: 0.7 } : {}) }}
                               disabled={status === 'sending'}
-                              title={`Send Database Form for ${row.abattoir_name || 'this abattoir'} to anthony.penzes@moc-pty.com`}
-                              onClick={async () => {
+                              title={`Send Database Form for ${row.abattoir_name || 'this abattoir'} (default: training@rmaa.co.za, hold Shift to override)`}
+                              onClick={async (e) => {
+                                let recipient = null;
+                                if (e.shiftKey) {
+                                  recipient = window.prompt('Send database form to:', 'training@rmaa.co.za');
+                                  if (!recipient) return;
+                                }
                                 setSendingForm(prev => ({ ...prev, [row.id]: 'sending' }));
                                 try {
-                                  const res = await fetch(`/api/abattoir/${row.id}/send-database-form`, { method: 'POST' });
+                                  const res = await fetch(`/api/abattoir/${row.id}/send-database-form`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: recipient ? JSON.stringify({ to: recipient }) : '{}',
+                                  });
                                   if (!res.ok) throw new Error();
                                   const data = await res.json();
                                   if (data.dateSent) {
