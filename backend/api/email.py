@@ -142,12 +142,218 @@ def _apply_cell_updates(xml: str, cells: dict) -> str:
 
 def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53',
                          setup_page: bool = False) -> bytes:
-    """Convert Excel to PDF using LibreOffice (cross-platform).
+    """Convert Excel to PDF.
 
-    setup_page: when True, bakes print-area/fit-to-page into the file before
-    converting. Skipped for user-uploaded files so embedded images remain
-    as authored. Requires `libreoffice` (or `soffice`) on PATH.
+    Tries Microsoft Graph (renders ink/signatures faithfully) when configured;
+    falls back to LibreOffice. setup_page=True bakes print-area + fit-to-page
+    into the xlsx before converting (for generated quotations and STT exports).
     """
+    # Rasterize ink (stylus) annotations — neither LibreOffice nor Graph PDF
+    # export renders Excel's <xdr:contentPart> ink, so we convert them to PNG
+    # images first.
+    xlsx_buffer = _rasterize_inks(xlsx_buffer)
+    if setup_page:
+        xlsx_buffer = _bake_page_setup(xlsx_buffer, print_area)
+    if _graph_configured():
+        try:
+            return _convert_via_graph(xlsx_buffer, print_area)
+        except Exception:
+            pass  # fall through to LibreOffice
+    return _convert_via_libreoffice(xlsx_buffer, print_area, setup_page=False)
+
+
+def _rasterize_inks(xlsx_bytes: bytes) -> bytes:
+    """Replace Excel ink annotations with rendered PNG images.
+
+    Excel stores stylus drawings as xl/ink/*.xml (W3C InkML) referenced from
+    drawings via <xdr:contentPart>. PDF exporters skip these — we render each
+    stroke to a PNG and substitute a normal <xdr:pic> anchor.
+    """
+    import zipfile
+    import re
+    from io import BytesIO
+
+    with zipfile.ZipFile(BytesIO(xlsx_bytes)) as src:
+        files = {name: src.read(name) for name in src.namelist()}
+
+    drawings = [n for n in files if re.fullmatch(r'xl/drawings/drawing\d+\.xml', n)]
+    if not drawings:
+        return xlsx_bytes
+
+    next_img_idx = max(
+        [int(m.group(1)) for n in files
+         for m in [re.search(r'xl/media/image(\d+)\.', n)] if m] + [0]
+    ) + 1
+
+    new_files = dict(files)
+    changed = False
+
+    for d_name in drawings:
+        rels_name = d_name.replace('xl/drawings/', 'xl/drawings/_rels/') + '.rels'
+        if rels_name not in files:
+            continue
+        drawing_xml = new_files[d_name].decode('utf-8')
+        rels_xml = new_files[rels_name].decode('utf-8')
+
+        rid_to_target = dict(re.findall(
+            r'<Relationship\s+Id="(rId\d+)"[^>]*?Target="([^"]+)"', rels_xml))
+
+        # Iterate twoCellAnchor blocks that wrap contentPart ink. Keep the
+        # original <xdr:from>/<xdr:to> cell anchors (they scale with the page
+        # layout), and replace only the AlternateContent with an <xdr:pic>
+        # that stretches to fill the anchor.
+        anchor_re = re.compile(
+            r'(<xdr:twoCellAnchor[^>]*>)(.*?)(</xdr:twoCellAnchor>)', re.DOTALL)
+        new_drawing = drawing_xml
+        offset = 0
+        for m in list(anchor_re.finditer(drawing_xml)):
+            inner = m.group(2)
+            cp = re.search(r'<xdr:contentPart[^>]*r:id="(rId\d+)"', inner)
+            if not cp:
+                continue
+            rid = cp.group(1)
+            ink_target = rid_to_target.get(rid, '')
+            if 'ink' not in ink_target:
+                continue
+            ink_path = 'xl/' + ink_target.replace('../', '')
+            if ink_path not in files:
+                continue
+            ext_m = re.search(r'<a:ext\s+cx="(\d+)"\s+cy="(\d+)"', inner)
+            cx = int(ext_m.group(1)) if ext_m else 200000
+            cy = int(ext_m.group(2)) if ext_m else 80000
+            png = _render_ink_png(files[ink_path], cx, cy)
+            if not png:
+                continue
+
+            img_name = f'xl/media/image_ink{next_img_idx}.png'
+            new_files[img_name] = png
+            new_rid = f'rIdInk{next_img_idx}'
+            new_rel = (
+                f'<Relationship Id="{new_rid}" '
+                f'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+                f'Target="../media/image_ink{next_img_idx}.png"/>'
+            )
+            rels_xml = rels_xml.replace('</Relationships>', new_rel + '</Relationships>')
+
+            # Preserve <xdr:from> and <xdr:to>, replace the rest of the inner
+            # content with a pic and clientData
+            from_m = re.search(r'<xdr:from>.*?</xdr:from>', inner, re.DOTALL)
+            to_m = re.search(r'<xdr:to>.*?</xdr:to>', inner, re.DOTALL)
+            if not (from_m and to_m):
+                continue
+            new_inner = (
+                from_m.group() + to_m.group() +
+                f'<xdr:pic>'
+                f'<xdr:nvPicPr>'
+                f'<xdr:cNvPr id="{2000 + next_img_idx}" name="Ink {next_img_idx}"/>'
+                f'<xdr:cNvPicPr/>'
+                f'</xdr:nvPicPr>'
+                f'<xdr:blipFill xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                f'<a:blip r:embed="{new_rid}"/>'
+                f'<a:stretch><a:fillRect/></a:stretch>'
+                f'</xdr:blipFill>'
+                f'<xdr:spPr>'
+                f'<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+                f'</xdr:spPr>'
+                f'</xdr:pic>'
+                f'<xdr:clientData/>'
+            )
+            new_anchor = m.group(1) + new_inner + m.group(3)
+            start = m.start() + offset
+            end = m.end() + offset
+            new_drawing = new_drawing[:start] + new_anchor + new_drawing[end:]
+            offset += len(new_anchor) - (end - start)
+            next_img_idx += 1
+            changed = True
+
+        new_files[d_name] = new_drawing.encode('utf-8')
+        new_files[rels_name] = rels_xml.encode('utf-8')
+
+    if not changed:
+        return xlsx_bytes
+
+    # Update Content_Types if needed (PNG default may already be there)
+    ct_name = '[Content_Types].xml'
+    if ct_name in new_files:
+        ct = new_files[ct_name].decode('utf-8')
+        if 'Extension="png"' not in ct:
+            ct = ct.replace(
+                '<Types ',
+                '<Types ',
+            ).replace(
+                '</Types>',
+                '<Default Extension="png" ContentType="image/png"/></Types>',
+            )
+            new_files[ct_name] = ct.encode('utf-8')
+
+    out = BytesIO()
+    with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as dst:
+        for name, content in new_files.items():
+            dst.writestr(name, content)
+    return out.getvalue()
+
+
+def _render_ink_png(ink_bytes: bytes, cx_emu: int, cy_emu: int) -> bytes | None:
+    """Rasterize InkML traces to a transparent PNG sized to cx/cy EMU."""
+    try:
+        from xml.etree import ElementTree as ET
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return None
+    try:
+        root = ET.fromstring(ink_bytes)
+    except ET.ParseError:
+        return None
+    ns = {'i': 'http://www.w3.org/2003/InkML'}
+    strokes = []
+    for tr in root.findall('.//i:trace', ns):
+        text = (tr.text or '').strip()
+        if not text:
+            continue
+        pts = []
+        for entry in text.replace('\n', ' ').split(','):
+            parts = entry.strip().split()
+            if len(parts) >= 2:
+                try:
+                    pts.append((float(parts[0]), float(parts[1])))
+                except ValueError:
+                    pass
+        if pts:
+            strokes.append(pts)
+    if not strokes:
+        return None
+
+    all_x = [p[0] for s in strokes for p in s]
+    all_y = [p[1] for s in strokes for p in s]
+    min_x, max_x = min(all_x), max(all_x)
+    min_y, max_y = min(all_y), max(all_y)
+
+    # 9525 EMU per pixel @ 96 DPI; scale up 2x for crisper rendering
+    w_px = max(int(cx_emu / 9525) * 2, 8)
+    h_px = max(int(cy_emu / 9525) * 2, 8)
+
+    img = Image.new('RGBA', (w_px, h_px), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+
+    pad = 2
+    sx = (w_px - 2 * pad) / max(max_x - min_x, 1e-6)
+    sy = (h_px - 2 * pad) / max(max_y - min_y, 1e-6)
+    scale = min(sx, sy)
+    off_x = (w_px - (max_x - min_x) * scale) / 2
+    off_y = (h_px - (max_y - min_y) * scale) / 2
+
+    for pts in strokes:
+        scaled = [((x - min_x) * scale + off_x, (y - min_y) * scale + off_y) for x, y in pts]
+        if len(scaled) >= 2:
+            draw.line(scaled, fill=(0, 0, 0, 255), width=max(2, w_px // 80))
+
+    from io import BytesIO
+    buf = BytesIO()
+    img.save(buf, format='PNG')
+    return buf.getvalue()
+
+
+def _convert_via_libreoffice(xlsx_buffer: bytes, print_area: str, setup_page: bool) -> bytes:
     import sys
     import tempfile
     import os
@@ -194,6 +400,84 @@ def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53',
                 pass
 
 
+def _convert_via_graph(xlsx_buffer: bytes, print_area: str) -> bytes:
+    """Upload xlsx to OneDrive, set page layout, render PDF, delete temp file.
+
+    Microsoft renders the file with the real Excel engine — handles ink
+    annotations, signatures, charts, etc. correctly.
+    """
+    token = get_access_token()
+    sender = settings.GRAPH_SENDER_EMAIL
+    temp_name = f'_stt_convert_{int(time.time() * 1000)}.xlsx'
+    item_url = f'https://graph.microsoft.com/v1.0/users/{sender}/drive/root:/{temp_name}'
+    auth = {'Authorization': f'Bearer {token}'}
+
+    upload = requests.put(
+        f'{item_url}:/content',
+        headers={**auth, 'Content-Type':
+                 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'},
+        data=xlsx_buffer, timeout=120,
+    )
+    if not upload.ok:
+        raise RuntimeError(f'OneDrive upload failed: {upload.text}')
+    item_id = upload.json()['id']
+
+    excel_base = (f'https://graph.microsoft.com/v1.0/users/{sender}'
+                  f'/drive/items/{item_id}/workbook')
+    json_hdr = {**auth, 'Content-Type': 'application/json'}
+
+    try:
+        session = requests.post(f'{excel_base}/createSession', headers=json_hdr,
+                                json={'persistChanges': True}, timeout=60)
+        session_id = session.json().get('id') if session.ok else None
+        s_hdr = {**json_hdr, 'workbook-session-id': session_id} if session_id else json_hdr
+
+        ws_resp = requests.get(f'{excel_base}/worksheets', headers=s_hdr, timeout=60)
+        if ws_resp.ok:
+            sheets = ws_resp.json().get('value', [])
+            if sheets:
+                first = sheets[0]
+                from urllib.parse import quote
+                ws_path = f"worksheets('{quote(first['id'])}')"
+                # Hide other sheets so PDF only contains the first
+                for s in sheets[1:]:
+                    requests.patch(
+                        f"{excel_base}/worksheets('{quote(s['id'])}')",
+                        headers=s_hdr, json={'visibility': 'hidden'}, timeout=60,
+                    )
+                requests.patch(f'{excel_base}/{ws_path}/pageLayout', headers=s_hdr,
+                               json={
+                                   'paperSize': 'A4',
+                                   'orientation': 'portrait',
+                                   'centerHorizontally': True,
+                                   'leftMargin': 0.4, 'rightMargin': 0.4,
+                                   'topMargin': 0.4, 'bottomMargin': 0.4,
+                                   'headerMargin': 0.2, 'footerMargin': 0.2,
+                                   'zoom': {'fitToPagesWide': 1, 'fitToPagesTall': 1},
+                               }, timeout=60)
+                requests.post(f'{excel_base}/names/add', headers=s_hdr, json={
+                    'name': '_xlnm.Print_Area',
+                    'reference': f"='{first['name']}'!{print_area}",
+                }, timeout=60)
+
+        if session_id:
+            requests.post(f'{excel_base}/closeSession', headers=s_hdr, timeout=30)
+
+        pdf = requests.get(
+            f'https://graph.microsoft.com/v1.0/users/{sender}'
+            f'/drive/items/{item_id}/content?format=pdf',
+            headers=auth, timeout=120,
+        )
+        if not pdf.ok:
+            raise RuntimeError(f'PDF render failed: {pdf.text}')
+        return pdf.content
+    finally:
+        requests.delete(
+            f'https://graph.microsoft.com/v1.0/users/{sender}/drive/items/{item_id}',
+            headers=auth, timeout=30,
+        )
+
+
 def _bake_page_setup(xlsx_bytes: bytes, print_area: str) -> bytes:
     """Set fit-to-page/A4/portrait/print-area in xlsx via direct XML edits.
 
@@ -223,9 +507,11 @@ def _inject_page_setup(xml: str, print_area: str) -> str:
                   'orientation="portrait"/>')
     # sheetPr/pageSetUpPr: enable fit-to-page
     fit_pr = '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
-    # pageMargins: tight
-    margins = ('<pageMargins left="0.2" right="0.2" top="0.2" bottom="0.2" '
-               'header="0.1" footer="0.1"/>')
+    # pageMargins: equal left/right for centered look
+    margins = ('<pageMargins left="0.4" right="0.4" top="0.4" bottom="0.4" '
+               'header="0.2" footer="0.2"/>')
+    # printOptions: center horizontally on page
+    print_opts = '<printOptions horizontalCentered="1"/>'
     # Replace existing tags or insert near </worksheet>
     xml = re.sub(r'<sheetPr[^>]*>.*?</sheetPr>|<sheetPr[^/]*/>', fit_pr, xml, count=1, flags=re.DOTALL)
     if '<sheetPr' not in xml:
@@ -236,6 +522,10 @@ def _inject_page_setup(xml: str, print_area: str) -> str:
     xml = re.sub(r'<pageMargins[^/]*/>', margins, xml, count=1)
     if '<pageMargins' not in xml:
         xml = xml.replace('</worksheet>', margins + '</worksheet>', 1)
+    # printOptions must come BEFORE pageMargins per ECMA-376
+    xml = re.sub(r'<printOptions[^/]*/>', print_opts, xml, count=1)
+    if '<printOptions' not in xml:
+        xml = xml.replace('<pageMargins', print_opts + '<pageMargins', 1)
     return xml
 
 

@@ -482,8 +482,42 @@ def abattoir_send_form_view(request, pk):
         return Response({'message': f'Template not found: {template_path}'}, status=500)
 
     try:
-        doc = DocxTemplate(str(template_path))
-        doc.render(data)
+        from docx import Document
+        from copy import deepcopy
+        from lxml import etree
+
+        doc = Document(str(template_path))
+        body = doc.element.body
+        W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'
+        ns = {'w': W}
+
+        # Fill Word content controls (SDT) — match by alias or tag
+        for sdt in body.iter(f'{{{W}}}sdt'):
+            tag = sdt.find(f'.//{{{W}}}tag', ns)
+            alias = sdt.find(f'.//{{{W}}}alias', ns)
+            tag_val = tag.get(f'{{{W}}}val') if tag is not None else None
+            alias_val = alias.get(f'{{{W}}}val') if alias is not None else None
+            # Prefer alias — template has at least one SDT with mismatched tag
+            key = alias_val if alias_val in data else tag_val
+            if not key or key not in data:
+                continue
+            content = sdt.find(f'{{{W}}}sdtContent', ns)
+            if content is None:
+                continue
+            # Find first run, clear all <w:t> in this content, set first to value
+            runs = content.findall(f'.//{{{W}}}r', ns)
+            if not runs:
+                continue
+            first_set = False
+            for r in runs:
+                for t in r.findall(f'{{{W}}}t', ns):
+                    if not first_set:
+                        t.text = data[key]
+                        t.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+                        first_set = True
+                    else:
+                        t.text = ''
+
         buf = BytesIO()
         doc.save(buf)
         doc_bytes = buf.getvalue()
@@ -900,7 +934,9 @@ def stt_export_pdf_view(request):
         return Response({'message': 'No file uploaded'}, status=400)
     xlsx_buf = f.read()
     try:
-        pdf_buf = email_svc.convert_excel_to_pdf(xlsx_buf)
+        pdf_buf = email_svc.convert_excel_to_pdf(
+            xlsx_buf, print_area='$A$1:$AD$53', setup_page=True,
+        )
     except Exception as e:
         return Response({'message': f'PDF conversion failed: {e}'}, status=500)
 
