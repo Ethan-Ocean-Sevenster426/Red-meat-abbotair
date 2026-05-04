@@ -948,7 +948,11 @@ def stt_export_pdf_view(request):
         td = datetime.strptime(training_date_raw, '%Y-%m-%d')
     except (ValueError, TypeError):
         td = datetime.now()
-    folder_name = f"STT Training {td.day:02d}-{td.month:02d}-{td.year} {abattoir}"
+    now = datetime.now()
+    folder_name = (
+        f"STT Training {td.day:02d}-{td.month:02d}-{td.year} "
+        f"{now.hour:02d}-{now.minute:02d}-{now.second:02d} {abattoir}"
+    )
     save_dir = settings.DOCUMENTS_ROOT / province / abattoir / 'STT Training Documents' / folder_name
     save_dir.mkdir(parents=True, exist_ok=True)
     (save_dir / f'{folder_name}.xlsx').write_bytes(xlsx_buf)
