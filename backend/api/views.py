@@ -917,9 +917,21 @@ def stt_parse_excel_view(request):
             id_number = ''.join(id_digit_parts)
             if not surname and not name and not id_number:
                 continue
+            rg = (race + gender).strip().upper()
+            # Set corresponding race-gender column to "1" for this row
+            rg_map = {
+                'AM': 'am', 'AF': 'af', 'AD': 'ad',
+                'CM': 'cm', 'CF': 'cf', 'CD': 'cd',
+                'IM': 'im', 'IF': 'if_col', 'ID': 'id_2',
+                'WM': 'wm', 'WF': 'wf', 'WD': 'wd',
+            }
+            rg_flags = {col: '' for col in rg_map.values()}
+            if rg in rg_map:
+                rg_flags[rg_map[rg]] = '1'
             rows_out.append({
                 'work_station': work_station, 'surname': surname, 'name': name,
-                'id_number': id_number, 'race_gender': (race + gender).strip(),
+                'id_number': id_number, 'race_gender': rg,
+                **rg_flags,
             })
         return Response({'session': session, 'rows': rows_out})
     except Exception as e:
