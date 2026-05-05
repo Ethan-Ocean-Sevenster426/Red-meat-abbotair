@@ -183,7 +183,20 @@ export default function STTTrainingReport() {
   };
 
   // ── Cell value (pending overrides row) ──
-  const cellVal = (row, key) => pending[row.id]?.[key] ?? row[key] ?? '';
+  const RG_FLAGS = { AM:'am', AF:'af', AD:'ad', CM:'cm', CF:'cf', CD:'cd',
+                     IM:'im', IF:'if_', ID:'id_2', WM:'wm', WF:'wf', WD:'wd' };
+  const RG_FLAG_KEYS = new Set(Object.values(RG_FLAGS));
+  const cellVal = (row, key) => {
+    const pendingVal = pending[row.id]?.[key];
+    if (pendingVal !== undefined) return pendingVal;
+    const stored = row[key];
+    if (stored) return stored;
+    if (RG_FLAG_KEYS.has(key)) {
+      const rg = (row.race_gender || '').trim().toUpperCase();
+      if (RG_FLAGS[rg] === key) return '1';
+    }
+    return '';
+  };
 
   // ── Edit cell — auto-compute tot_m / tot_f / tot_d ──
   const editCell = useCallback((rowId, key, value, originalRow) => {

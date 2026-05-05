@@ -922,7 +922,7 @@ def stt_parse_excel_view(request):
             rg_map = {
                 'AM': 'am', 'AF': 'af', 'AD': 'ad',
                 'CM': 'cm', 'CF': 'cf', 'CD': 'cd',
-                'IM': 'im', 'IF': 'if_col', 'ID': 'id_2',
+                'IM': 'im', 'IF': 'if_', 'ID': 'id_2',
                 'WM': 'wm', 'WF': 'wf', 'WD': 'wd',
             }
             rg_flags = {col: '' for col in rg_map.values()}
