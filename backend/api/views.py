@@ -1027,6 +1027,7 @@ def stt_breakdown_view(request):
     where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
     if_ref = safe_col_ref('if_', {'if_'})
 
+    id_ref = safe_col_ref('id_2', set())
     sql = f"""
         SELECT
           training_start_date, training_end_date, abattoir_name,
@@ -1034,17 +1035,23 @@ def stt_breakdown_view(request):
           COUNT(*) AS total_trained,
           SUM(CASE WHEN am   = '1' THEN 1 ELSE 0 END) AS am,
           SUM(CASE WHEN af   = '1' THEN 1 ELSE 0 END) AS af,
+          SUM(CASE WHEN ad   = '1' THEN 1 ELSE 0 END) AS ad,
           SUM(CASE WHEN cm   = '1' THEN 1 ELSE 0 END) AS cm,
           SUM(CASE WHEN cf   = '1' THEN 1 ELSE 0 END) AS cf,
+          SUM(CASE WHEN cd   = '1' THEN 1 ELSE 0 END) AS cd,
           SUM(CASE WHEN im   = '1' THEN 1 ELSE 0 END) AS im,
           SUM(CASE WHEN {if_ref} = '1' THEN 1 ELSE 0 END) AS if_,
+          SUM(CASE WHEN {id_ref} = '1' THEN 1 ELSE 0 END) AS id_2,
           SUM(CASE WHEN wm   = '1' THEN 1 ELSE 0 END) AS wm,
           SUM(CASE WHEN wf   = '1' THEN 1 ELSE 0 END) AS wf,
+          SUM(CASE WHEN wd   = '1' THEN 1 ELSE 0 END) AS wd,
           SUM(CASE WHEN age_lt35  = '1' THEN 1 ELSE 0 END) AS age_lt35,
           SUM(CASE WHEN age_35_55 = '1' THEN 1 ELSE 0 END) AS age_35_55,
           SUM(CASE WHEN age_gt55  = '1' THEN 1 ELSE 0 END) AS age_gt55,
-          SUM(CASE WHEN am='1' OR af='1' OR cm='1' OR cf='1' OR im='1' OR {if_ref}='1' THEN 1 ELSE 0 END) AS hdis,
-          SUM(CASE WHEN disability = 'Yes' THEN 1 ELSE 0 END) AS disability_count
+          SUM(CASE WHEN am='1' OR af='1' OR ad='1' OR cm='1' OR cf='1' OR cd='1'
+                       OR im='1' OR {if_ref}='1' OR {id_ref}='1' THEN 1 ELSE 0 END) AS hdis,
+          SUM(CASE WHEN ad='1' OR cd='1' OR {id_ref}='1' OR wd='1' OR disability = 'Yes'
+                  THEN 1 ELSE 0 END) AS disability_count
         FROM STTTrainingReport
         {where_sql}
         GROUP BY training_start_date, training_end_date, abattoir_name,

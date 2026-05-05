@@ -123,12 +123,16 @@ const REPORT_COLS = [
   { key: 'total_trained',       label: 'No. Trained',    w: 72,  num: true },
   { key: 'am',                  label: 'AM',  w: 40, num: true },
   { key: 'af',                  label: 'AF',  w: 40, num: true },
+  { key: 'ad',                  label: 'AD',  w: 40, num: true },
   { key: 'cm',                  label: 'CM',  w: 40, num: true },
   { key: 'cf',                  label: 'CF',  w: 40, num: true },
+  { key: 'cd',                  label: 'CD',  w: 40, num: true },
   { key: 'im',                  label: 'IM',  w: 40, num: true },
   { key: 'if_',                 label: 'IF',  w: 40, num: true },
+  { key: 'id_2',                label: 'ID',  w: 40, num: true },
   { key: 'wm',                  label: 'WM',  w: 40, num: true },
   { key: 'wf',                  label: 'WF',  w: 40, num: true },
+  { key: 'wd',                  label: 'WD',  w: 40, num: true },
   { key: 'age_lt35',            label: '< 35',    w: 44, num: true },
   { key: 'age_35_55',           label: '35 > 55', w: 52, num: true },
   { key: 'age_gt55',            label: '55 >',    w: 44, num: true },
@@ -278,35 +282,44 @@ export default function STTBreakdownReport() {
     });
     const speciesData = Object.values(bySpecies).sort((a,b) => b.trained - a.trained);
 
-    // Gender totals
-    const gender = { AM: 0, AF: 0, CM: 0, CF: 0, IM: 0, IF: 0, WM: 0, WF: 0 };
+    // Gender totals (D = disabled within race)
+    const gender = { AM: 0, AF: 0, AD: 0, CM: 0, CF: 0, CD: 0,
+                     IM: 0, IF: 0, ID: 0, WM: 0, WF: 0, WD: 0 };
     rows.forEach(r => {
       gender.AM += parseInt(r.am) || 0;
       gender.AF += parseInt(r.af) || 0;
+      gender.AD += parseInt(r.ad) || 0;
       gender.CM += parseInt(r.cm) || 0;
       gender.CF += parseInt(r.cf) || 0;
+      gender.CD += parseInt(r.cd) || 0;
       gender.IM += parseInt(r.im) || 0;
       gender.IF += parseInt(r.if_) || 0;
+      gender.ID += parseInt(r.id_2) || 0;
       gender.WM += parseInt(r.wm) || 0;
       gender.WF += parseInt(r.wf) || 0;
+      gender.WD += parseInt(r.wd) || 0;
     });
     const genderData = [
       { name: 'African Male', value: gender.AM, color: '#0078d4' },
       { name: 'African Female', value: gender.AF, color: '#40a9ff' },
+      { name: 'African Disabled', value: gender.AD, color: '#69c0ff' },
       { name: 'Coloured Male', value: gender.CM, color: '#107c10' },
       { name: 'Coloured Female', value: gender.CF, color: '#52c41a' },
+      { name: 'Coloured Disabled', value: gender.CD, color: '#95de64' },
       { name: 'Indian Male', value: gender.IM, color: '#ca5010' },
       { name: 'Indian Female', value: gender.IF, color: '#fa8c16' },
+      { name: 'Indian Disabled', value: gender.ID, color: '#ffc069' },
       { name: 'White Male', value: gender.WM, color: '#5c2d91' },
       { name: 'White Female', value: gender.WF, color: '#b37feb' },
+      { name: 'White Disabled', value: gender.WD, color: '#d3adf7' },
     ].filter(g => g.value > 0);
 
     // Ethnicity (race groups)
     const ethnicity = [
-      { name: 'African', value: gender.AM + gender.AF, color: '#0078d4' },
-      { name: 'Coloured', value: gender.CM + gender.CF, color: '#107c10' },
-      { name: 'Indian', value: gender.IM + gender.IF, color: '#ca5010' },
-      { name: 'White', value: gender.WM + gender.WF, color: '#5c2d91' },
+      { name: 'African', value: gender.AM + gender.AF + gender.AD, color: '#0078d4' },
+      { name: 'Coloured', value: gender.CM + gender.CF + gender.CD, color: '#107c10' },
+      { name: 'Indian', value: gender.IM + gender.IF + gender.ID, color: '#ca5010' },
+      { name: 'White', value: gender.WM + gender.WF + gender.WD, color: '#5c2d91' },
     ].filter(e => e.value > 0);
 
     // Age groups
@@ -831,9 +844,9 @@ export default function STTBreakdownReport() {
               {rows.length > 0 && (
                 <tfoot>
                   <tr>
-                    <td colSpan={5} style={s.totalsLabel}>TOTALS</td>
+                    <td colSpan={6} style={s.totalsLabel}>TOTALS</td>
                     <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'total_trained')}</td>
-                    {['am','af','cm','cf','im','if_','wm','wf'].map(k => (
+                    {['am','af','ad','cm','cf','cd','im','if_','id_2','wm','wf','wd'].map(k => (
                       <td key={k} style={{ ...s.totalsCell, ...s.num }}>{sum(rows,k)}</td>
                     ))}
                     <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'age_lt35')}</td>
