@@ -4,14 +4,15 @@ import { useAuth } from '../auth.jsx';
 import ColFilterDropdown from '../components/ColFilterDropdown.jsx';
 import ColVisibilityPanel from '../components/ColVisibilityPanel.jsx';
 import AuditLogModal from '../components/AuditLogModal.jsx';
+import { deriveDobAge } from '../utils/saId.js';
 
 const COLUMNS = [
   { key: 'id',             label: 'ID',              w: 50,  readonly: true },
   { key: 'surname',        label: 'Surname',         w: 140 },
   { key: 'name',           label: 'Name',            w: 130 },
   { key: 'id_number',      label: 'ID Number',       w: 150 },
-  { key: 'year_of_birth',  label: 'Year Of Birth',   w: 110 },
-  { key: 'age',            label: 'Age',             w: 60  },
+  { key: 'year_of_birth',  label: 'Date Of Birth',   w: 110, readonly: true },
+  { key: 'age',            label: 'Age',             w: 60,  readonly: true },
   { key: 'citizen',        label: 'Citizen',         w: 100 },
   { key: 'race_gender',    label: 'Race & Gender',   w: 120 },
   { key: 'work_stations',  label: 'Work Stations',   w: 280 },
@@ -20,7 +21,7 @@ const COLUMNS = [
 ];
 
 const WRAP_COLS = new Set(['work_stations']);
-const MODAL_EXCLUDE = new Set(['modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values']);
+const MODAL_EXCLUDE = new Set(['year_of_birth', 'age', 'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values']);
 const PAGE_SIZE = 50;
 
 export default function LearnerSummary() {
@@ -100,9 +101,28 @@ export default function LearnerSummary() {
     filterTimer.current = setTimeout(() => { setAppliedFilters(prev => ({ ...prev, [key]: val })); setPage(1); }, 400);
   };
 
-  const cellVal = (row, key) => pending[row.id]?.[key] ?? row[key] ?? '';
+  const cellVal = (row, key) => {
+    const pendingVal = pending[row.id]?.[key];
+    if (pendingVal !== undefined) return pendingVal;
+    const stored = row[key];
+    if (stored) return stored;
+    if (key === 'year_of_birth' || key === 'age') {
+      const idNum = pending[row.id]?.id_number ?? row.id_number;
+      const derived = deriveDobAge(idNum);
+      if (derived) return derived[key];
+    }
+    return '';
+  };
   const editCell = useCallback((rowId, key, value, originalRow) => {
-    setPending(prev => ({ ...prev, [rowId]: { ...prev[rowId], [key]: value } }));
+    setPending(prev => {
+      const updated = { ...prev[rowId], [key]: value };
+      let dobAge = {};
+      if (key === 'id_number') {
+        const derived = deriveDobAge(value);
+        if (derived) dobAge = derived;
+      }
+      return { ...prev, [rowId]: { ...updated, ...dobAge } };
+    });
     setOriginals(prev => prev[rowId] ? prev : { ...prev, [rowId]: originalRow });
   }, []);
 
@@ -190,7 +210,8 @@ export default function LearnerSummary() {
   const submitNewEntry = async () => {
     setAdding(true); setAddError('');
     try {
-      const payload = { ...newEntry, modified_by: user?.displayName || user?.username || 'Unknown', modified_time: new Date().toLocaleString('en-ZA') };
+      const dobAge = deriveDobAge(newEntry.id_number) || {};
+      const payload = { ...newEntry, ...dobAge, modified_by: user?.displayName || user?.username || 'Unknown', modified_time: new Date().toLocaleString('en-ZA') };
       const res = await fetch('/api/learners', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error((await res.json()).message);
       setShowAddModal(false);
@@ -412,7 +433,17 @@ export default function LearnerSummary() {
               {COLUMNS.filter(c => !c.readonly && !MODAL_EXCLUDE.has(c.key)).map(col => (
                 <div key={col.key} style={s.modalField}>
                   <label style={s.modalLabel}>{col.label}</label>
-                  <input style={s.modalInput} value={newEntry[col.key] || ''} onChange={e => setNewEntry(prev => ({ ...prev, [col.key]: e.target.value }))} placeholder={col.label} />
+                  <input style={s.modalInput} value={newEntry[col.key] || ''} onChange={e => {
+                    const val = e.target.value;
+                    setNewEntry(prev => {
+                      const updated = { ...prev, [col.key]: val };
+                      if (col.key === 'id_number') {
+                        const derived = deriveDobAge(val);
+                        if (derived) return { ...updated, ...derived };
+                      }
+                      return updated;
+                    });
+                  }} placeholder={col.label} />
                 </div>
               ))}
             </div>

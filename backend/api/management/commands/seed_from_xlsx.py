@@ -108,8 +108,10 @@ class Command(BaseCommand):
 
         batch, count = [], 0
         BATCH_SIZE = 500
-        insert = 'INSERT IGNORE' if connection.vendor == 'mysql' else 'INSERT OR IGNORE INTO'
-        sql = f'{insert} INTO {table} ({col_list}) VALUES ({placeholders})' if connection.vendor != 'mysql' else f'INSERT IGNORE INTO {table} ({col_list}) VALUES ({placeholders})'
+        if connection.vendor == 'mysql':
+            sql = f'INSERT IGNORE INTO {table} ({col_list}) VALUES ({placeholders})'
+        else:
+            sql = f'INSERT OR IGNORE INTO {table} ({col_list}) VALUES ({placeholders})'
 
         with connection.cursor() as c:
             for row in rows:

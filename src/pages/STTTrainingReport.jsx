@@ -4,6 +4,7 @@ import { useAuth } from '../auth.jsx';
 import ColFilterDropdown from '../components/ColFilterDropdown.jsx';
 import ColVisibilityPanel from '../components/ColVisibilityPanel.jsx';
 import AuditLogModal from '../components/AuditLogModal.jsx';
+import { deriveDobAge } from '../utils/saId.js';
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
@@ -18,8 +19,8 @@ const COLUMNS = [
   { key: 'name',                label: 'Name',                  w: 120 },
   { key: 'surname',             label: 'Surname',               w: 120 },
   { key: 'id_number',           label: 'ID Number',             w: 140 },
-  { key: 'year_of_birth',       label: 'Year Of Birth',         w: 100 },
-  { key: 'age',                 label: 'Age',                   w: 60  },
+  { key: 'year_of_birth',       label: 'Date Of Birth',         w: 110, readonly: true },
+  { key: 'age',                 label: 'Age',                   w: 60,  readonly: true },
   { key: 'citizen',             label: 'Citizen',               w: 100 },
   { key: 'race_gender',         label: 'Race & Gender',         w: 120 },
   { key: 'training_start_date', label: 'Start Date',            w: 110 },
@@ -47,9 +48,9 @@ const COLUMNS = [
   { key: 'tot_m',               label: 'TOT M',                 w: 60,  readonly: true },
   { key: 'tot_f',               label: 'TOT F',                 w: 60,  readonly: true },
   { key: 'tot_d',               label: 'TOT D',                 w: 60,  readonly: true },
-  { key: 'age_lt35',            label: '< 35',                  w: 55,  opts: ONE_OPTS },
-  { key: 'age_35_55',           label: '35 > 55',               w: 65,  opts: ONE_OPTS },
-  { key: 'age_gt55',            label: '55 >',                  w: 55,  opts: ONE_OPTS },
+  { key: 'age_lt35',            label: '< 35',                  w: 55,  readonly: true },
+  { key: 'age_35_55',           label: '35 > 55',               w: 65,  readonly: true },
+  { key: 'age_gt55',            label: '55 >',                  w: 55,  readonly: true },
   { key: 'age_2',               label: 'Age 2',                 w: 80  },
   { key: 'total_race_gender',   label: 'Total Race & Gender',   w: 140, opts: ONE_OPTS },
   { key: 'total_male_female',   label: 'Total Male & Female',   w: 140, opts: ONE_OPTS },
@@ -66,7 +67,7 @@ const COLUMNS = [
 const WRAP_COLS = new Set(['modified_fields', 'old_values', 'new_values']);
 
 // Exclude from Add Entry modal
-const MODAL_EXCLUDE = new Set(['tot_m', 'tot_f', 'tot_d', 'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values']);
+const MODAL_EXCLUDE = new Set(['year_of_birth', 'age', 'age_lt35', 'age_35_55', 'age_gt55', 'tot_m', 'tot_f', 'tot_d', 'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values']);
 
 const PAGE_SIZE = 50;
 
@@ -191,21 +192,68 @@ export default function STTTrainingReport() {
     if (pendingVal !== undefined) return pendingVal;
     const stored = row[key];
     if (stored) return stored;
+
+    // Auto-derive DOB / Age from ID number
+    if (key === 'year_of_birth' || key === 'age') {
+      const idNum = pending[row.id]?.id_number ?? row.id_number;
+      const derived = deriveDobAge(idNum);
+      if (derived) return derived[key];
+    }
+
+    // Auto-derive race-gender flag from race_gender column
     if (RG_FLAG_KEYS.has(key)) {
       const rg = (row.race_gender || '').trim().toUpperCase();
       if (RG_FLAGS[rg] === key) return '1';
     }
+
+    // Auto-derive totals from race-gender flags
+    if (key === 'tot_m' || key === 'tot_f' || key === 'tot_d') {
+      const rg = (row.race_gender || '').trim().toUpperCase();
+      const flag = RG_FLAGS[rg];
+      const getFlag = (k) => (row[k] || '') === '1' || flag === k;
+      if (key === 'tot_m') return (getFlag('am') || getFlag('im') || getFlag('cm') || getFlag('wm')) ? '1' : '';
+      if (key === 'tot_f') return (getFlag('af') || getFlag('if_') || getFlag('cf') || getFlag('wf')) ? '1' : '';
+      if (key === 'tot_d') return (getFlag('ad') || getFlag('id_2') || getFlag('cd') || getFlag('wd')) ? '1' : '';
+    }
+
+    // Auto-derive age group from age
+    if (key === 'age_lt35' || key === 'age_35_55' || key === 'age_gt55') {
+      const idNum = pending[row.id]?.id_number ?? row.id_number;
+      const derived = deriveDobAge(idNum);
+      if (derived) {
+        const ageNum = parseInt(derived.age, 10);
+        if (!isNaN(ageNum)) {
+          if (key === 'age_lt35')  return ageNum < 35 ? '1' : '';
+          if (key === 'age_35_55') return (ageNum >= 35 && ageNum <= 55) ? '1' : '';
+          if (key === 'age_gt55')  return ageNum > 55 ? '1' : '';
+        }
+      }
+    }
+
     return '';
   };
 
-  // ── Edit cell — auto-compute tot_m / tot_f / tot_d ──
+  // ── Edit cell — auto-compute tot_m / tot_f / tot_d + DOB/Age from ID ──
   const editCell = useCallback((rowId, key, value, originalRow) => {
     setPending(prev => {
       const updated = { ...prev[rowId], [key]: value };
-      // Build a merged view for computing totals
       const merged = { ...originalRow, ...prev[rowId], [key]: value };
       const totals = computeTotals(merged);
-      return { ...prev, [rowId]: { ...updated, ...totals } };
+      // Auto-derive DOB, Age & age group when ID number changes
+      let dobAge = {};
+      if (key === 'id_number') {
+        const derived = deriveDobAge(value);
+        if (derived) {
+          dobAge = { ...derived };
+          const ageNum = parseInt(derived.age, 10);
+          if (!isNaN(ageNum)) {
+            dobAge.age_lt35  = ageNum < 35 ? '1' : '';
+            dobAge.age_35_55 = (ageNum >= 35 && ageNum <= 55) ? '1' : '';
+            dobAge.age_gt55  = ageNum > 55 ? '1' : '';
+          }
+        }
+      }
+      return { ...prev, [rowId]: { ...updated, ...totals, ...dobAge } };
     });
     setOriginals(prev => prev[rowId] ? prev : { ...prev, [rowId]: originalRow });
   }, []);
@@ -275,7 +323,20 @@ export default function STTTrainingReport() {
     setNewEntry(prev => {
       const updated = { ...prev, [key]: value };
       const totals  = computeTotals(updated);
-      return { ...updated, ...totals };
+      let dobAge = {};
+      if (key === 'id_number') {
+        const derived = deriveDobAge(value);
+        if (derived) {
+          dobAge = { ...derived };
+          const ageNum = parseInt(derived.age, 10);
+          if (!isNaN(ageNum)) {
+            dobAge.age_lt35  = ageNum < 35 ? '1' : '';
+            dobAge.age_35_55 = (ageNum >= 35 && ageNum <= 55) ? '1' : '';
+            dobAge.age_gt55  = ageNum > 55 ? '1' : '';
+          }
+        }
+      }
+      return { ...updated, ...totals, ...dobAge };
     });
   };
 
