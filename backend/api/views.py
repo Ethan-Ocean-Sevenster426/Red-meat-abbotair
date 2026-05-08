@@ -975,9 +975,9 @@ def stt_export_pdf_view(request):
 @api_view(['GET'])
 def stt_breakdown_view(request):
     vendor = connection.vendor
-    yfn = ((lambda c: f"CAST(strftime('%Y', {c}) AS INTEGER)")
+    yfn = ((lambda c: f"CAST(strftime('%%Y', {c}) AS INTEGER)")
            if vendor == 'sqlite' else (lambda c: f'YEAR({c})'))
-    mfn = ((lambda c: f"CAST(strftime('%m', {c}) AS INTEGER)")
+    mfn = ((lambda c: f"CAST(strftime('%%m', {c}) AS INTEGER)")
            if vendor == 'sqlite' else (lambda c: f'MONTH({c})'))
 
     where, params = [], []
@@ -1026,32 +1026,62 @@ def stt_breakdown_view(request):
 
     where_sql = ('WHERE ' + ' AND '.join(where)) if where else ''
     if_ref = safe_col_ref('if_', {'if_'})
-
     id_ref = safe_col_ref('id_2', set())
+
+    # Vendor-aware age calculation from SA ID number (first 6 digits = YYMMDD)
+    # Note: %% escapes the % so Django doesn't treat it as a query parameter placeholder
+    if vendor == 'sqlite':
+        _cur_yr  = "CAST(strftime('%%Y', 'now') AS INTEGER)"
+        _cur_y2  = "CAST(strftime('%%y', 'now') AS INTEGER)"
+        _id_yy   = "CAST(SUBSTR(id_number, 1, 2) AS INTEGER)"
+        _id_valid = "(id_number IS NOT NULL AND LENGTH(id_number) >= 6 AND id_number GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]*')"
+    else:
+        _cur_yr  = "YEAR(NOW())"
+        _cur_y2  = "CAST(DATE_FORMAT(NOW(), '%%y') AS UNSIGNED)"
+        _id_yy   = "CAST(LEFT(id_number, 2) AS UNSIGNED)"
+        _id_valid = "(id_number IS NOT NULL AND LENGTH(id_number) >= 6)"
+
+    _birth_yr = f"(CASE WHEN {_id_yy} > {_cur_y2} THEN 1900 ELSE 2000 END + {_id_yy})"
+    _age_expr = f"({_cur_yr} - {_birth_yr})"
+
+    # Flag: stored column OR derived from race_gender
+    def _flag(col, rg_code):
+        stored = f"{col} = '1'" if col not in ('if_', 'id_2') else f"{safe_col_ref(col, {col})} = '1'"
+        return f"({stored} OR UPPER(TRIM(race_gender)) = '{rg_code}')"
+
+    # Age group: stored column OR derived from id_number
+    def _age_grp(col, condition):
+        return f"({col} = '1' OR ({col} IS NULL OR {col} = '') AND {_id_valid} AND {_age_expr} {condition})"
+
+    _hdis_flags = ' OR '.join([
+        _flag('am','AM'), _flag('af','AF'), _flag('ad','AD'),
+        _flag('cm','CM'), _flag('cf','CF'), _flag('cd','CD'),
+        _flag('im','IM'), _flag(if_ref,'IF'), _flag(id_ref,'ID'),
+    ])
+    _dis_flags = ' OR '.join([_flag('ad','AD'), _flag('cd','CD'), _flag(id_ref,'ID'), _flag('wd','WD')])
+
     sql = f"""
         SELECT
           training_start_date, training_end_date, abattoir_name,
           municipality, province, thru_put, specie,
           COUNT(*) AS total_trained,
-          SUM(CASE WHEN am   = '1' THEN 1 ELSE 0 END) AS am,
-          SUM(CASE WHEN af   = '1' THEN 1 ELSE 0 END) AS af,
-          SUM(CASE WHEN ad   = '1' THEN 1 ELSE 0 END) AS ad,
-          SUM(CASE WHEN cm   = '1' THEN 1 ELSE 0 END) AS cm,
-          SUM(CASE WHEN cf   = '1' THEN 1 ELSE 0 END) AS cf,
-          SUM(CASE WHEN cd   = '1' THEN 1 ELSE 0 END) AS cd,
-          SUM(CASE WHEN im   = '1' THEN 1 ELSE 0 END) AS im,
-          SUM(CASE WHEN {if_ref} = '1' THEN 1 ELSE 0 END) AS if_,
-          SUM(CASE WHEN {id_ref} = '1' THEN 1 ELSE 0 END) AS id_2,
-          SUM(CASE WHEN wm   = '1' THEN 1 ELSE 0 END) AS wm,
-          SUM(CASE WHEN wf   = '1' THEN 1 ELSE 0 END) AS wf,
-          SUM(CASE WHEN wd   = '1' THEN 1 ELSE 0 END) AS wd,
-          SUM(CASE WHEN age_lt35  = '1' THEN 1 ELSE 0 END) AS age_lt35,
-          SUM(CASE WHEN age_35_55 = '1' THEN 1 ELSE 0 END) AS age_35_55,
-          SUM(CASE WHEN age_gt55  = '1' THEN 1 ELSE 0 END) AS age_gt55,
-          SUM(CASE WHEN am='1' OR af='1' OR ad='1' OR cm='1' OR cf='1' OR cd='1'
-                       OR im='1' OR {if_ref}='1' OR {id_ref}='1' THEN 1 ELSE 0 END) AS hdis,
-          SUM(CASE WHEN ad='1' OR cd='1' OR {id_ref}='1' OR wd='1' OR disability = 'Yes'
-                  THEN 1 ELSE 0 END) AS disability_count
+          SUM(CASE WHEN {_flag('am','AM')}   THEN 1 ELSE 0 END) AS am,
+          SUM(CASE WHEN {_flag('af','AF')}   THEN 1 ELSE 0 END) AS af,
+          SUM(CASE WHEN {_flag('ad','AD')}   THEN 1 ELSE 0 END) AS ad,
+          SUM(CASE WHEN {_flag('cm','CM')}   THEN 1 ELSE 0 END) AS cm,
+          SUM(CASE WHEN {_flag('cf','CF')}   THEN 1 ELSE 0 END) AS cf,
+          SUM(CASE WHEN {_flag('cd','CD')}   THEN 1 ELSE 0 END) AS cd,
+          SUM(CASE WHEN {_flag('im','IM')}   THEN 1 ELSE 0 END) AS im,
+          SUM(CASE WHEN {_flag(if_ref,'IF')} THEN 1 ELSE 0 END) AS if_,
+          SUM(CASE WHEN {_flag(id_ref,'ID')} THEN 1 ELSE 0 END) AS id_2,
+          SUM(CASE WHEN {_flag('wm','WM')}   THEN 1 ELSE 0 END) AS wm,
+          SUM(CASE WHEN {_flag('wf','WF')}   THEN 1 ELSE 0 END) AS wf,
+          SUM(CASE WHEN {_flag('wd','WD')}   THEN 1 ELSE 0 END) AS wd,
+          SUM(CASE WHEN {_age_grp('age_lt35', '< 35')}        THEN 1 ELSE 0 END) AS age_lt35,
+          SUM(CASE WHEN {_age_grp('age_35_55', 'BETWEEN 35 AND 55')} THEN 1 ELSE 0 END) AS age_35_55,
+          SUM(CASE WHEN {_age_grp('age_gt55', '> 55')}        THEN 1 ELSE 0 END) AS age_gt55,
+          SUM(CASE WHEN {_hdis_flags} THEN 1 ELSE 0 END) AS hdis,
+          SUM(CASE WHEN ({_dis_flags}) OR disability = 'Yes' THEN 1 ELSE 0 END) AS disability_count
         FROM STTTrainingReport
         {where_sql}
         GROUP BY training_start_date, training_end_date, abattoir_name,
