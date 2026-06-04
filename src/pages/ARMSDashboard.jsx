@@ -30,7 +30,7 @@ export default function ARMSDashboard() {
       <div style={s.body}>
         <iframe
           title="ARMS Power BI Report"
-          src="https://app.powerbi.com/view?r=eyJrIjoiYzA4NDExMTAtZjFiZC00YzJhLWFmNTctM2U0YzA4OTg0MmY3IiwidCI6ImIxNTA0YjFkLWQwOTYtNDA5YS1hMGYwLTZjYzU0NmRkZTk5MyJ9"
+          src="https://app.powerbi.com/view?r=eyJrIjoiN2UwZWM3OTEtNGE2Ni00YTE1LTlhNTgtMDRiNzk4YmI0NDZhIiwidCI6ImIxNTA0YjFkLWQwOTYtNDA5YS1hMGYwLTZjYzU0NmRkZTk5MyJ9"
           style={s.iframe}
           frameBorder="0"
           allowFullScreen
