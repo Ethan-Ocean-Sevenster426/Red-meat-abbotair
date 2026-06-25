@@ -1100,8 +1100,10 @@ def stt_breakdown_view(request):
     with connection.cursor() as c:
         c.execute(sql, params)
         rows = rows_to_dicts(c)
+        yr_expr = ("CAST(strftime('%Y', training_start_date) AS INTEGER)"
+                   if vendor == 'sqlite' else "YEAR(training_start_date)")
         c.execute(f"""
-            SELECT DISTINCT {yfn('training_start_date')} AS yr, province, abattoir_name
+            SELECT DISTINCT {yr_expr} AS yr, province, abattoir_name
             FROM STTTrainingReport
             WHERE training_start_date IS NOT NULL AND training_start_date <> ''
         """)

@@ -1026,7 +1026,7 @@ export default function STTTrainingReport() {
                         <option value="">— Select abattoir —</option>
                         {abattoirList.registered.length > 0 && (
                           <optgroup label="Registered Abattoirs">
-                            {abattoirList.registered.map(a => <option key={a.name} value={a.name}>{a.name}</option>)}
+                            {abattoirList.registered.map((a, i) => <option key={`${a.name}-${i}`} value={a.name}>{a.name}</option>)}
                           </optgroup>
                         )}
                         {abattoirList.custom.length > 0 && (
