@@ -4,6 +4,35 @@ Enterprise Resource Planning system for the Red Meat Abattoir Association (RMAA)
 
 ---
 
+## 🔔 Recent Changes — June 2026
+
+> ### ⚠️ Backend developer — required on deploy
+> 1. **Run migrations** — from `backend/`: `python manage.py migrate`. Two new migrations:
+>    - **`0007_rmaacontact`** — creates the **`RmaaContacts`** table (RMAA-contact dropdown on the quotation form).
+>    - **`0008_abattoirmaster_market_access_..._and_more`** — adds **6 new columns** to `AbattoirMaster` (Market Access contacts).
+> 2. **Updated document templates are committed** — deploy them as-is, no code change needed:
+>    - **`Quotation Template.xlsx`** — discount-line formatting (Rand format, uniform blue, text wrap) + label fixes.
+>    - **`RMAA Database Form.docx`** — added the 6 Market Access fields and fixed a duplicated content-control tag (the Export *Email* control was mis-tagged as *Cell*).
+> 3. **Writable temp directory** — quotation PDF previews are cached under `temp/quote-previews/` (gitignored, auto-created, pruned after 2 h). Ensure the app process can write to the project `temp/` directory on the server.
+> 4. **No new environment variables.**
+
+### Feature changes
+- **Registered Abattoirs** — 6 new columns: *Market Access/Export Related Matters Contact* (Name / Email / Cell) and *Market Access – Authorised Private Veterinarian Contact* (Name / Email / Cell). Full inline-edit, filter, export and audit support. These also auto-populate the emailed RMAA Database Form when "Send Database Form" is clicked.
+- **Quotation System (Finances → New Quote)**
+  - Postal & street address now auto-fill from the selected abattoir's master record.
+  - **RMAA Contact** is now a managed dropdown (add / delete contacts) backed by the `RmaaContacts` table — new endpoints `GET/POST /api/quotation/rmaa-contacts` and `DELETE /api/quotation/rmaa-contacts/:id`.
+  - The review-step PDF preview is served from `GET /api/quotation/preview/:token` so the in-viewer **Download** uses the quotation filename instead of `Download.pdf`.
+  - Discount lines: "Skills Programme" / "Audit Verification" wording, Rand-formatted monetary amounts, uniform blue colour, corrected note text.
+- **STT Training Breakdown report**
+  - Province-view heading → "ROUTINE SLAUGHTER TECHNIQUE TRAINING SUMMARY"; the selected quarter is shown in YEAR TOTALS.
+  - Dynamic Excel export filenames (province + year/quarter) for both the Province summary and Detailed Breakdown exports.
+  - Removed CD / ID / WD columns; "Specie" → "Species"; HDI's moved beside No. Trained; new summary mini-table (visits / operators trained / HDI's) on screen and in the export.
+  - Print → A4 landscape PDF preserves the report colours and layout.
+  - "KwaZulu-Natal" now displays correctly across filters, tables, charts and exports (the value is stored as `KwaZuluNatal`).
+- **STT Training Report** — fixed the KwaZulu-Natal province filter (plus the inline dropdown, add-entry, upload and export) so it matches the stored value.
+
+---
+
 ## Prerequisites
 
 - **Node.js** v18+
@@ -112,6 +141,7 @@ Tables are managed via Django migrations. Run `python manage.py migrate` from th
 | `FeeStructure` | Fee structure / pricing data |
 | `ResidueMonitoring` / `ResidueMonitoringTemp` | Residue monitoring data |
 | `CustomAbattoirs` | User-added abattoir names (not in master list) |
+| `RmaaContacts` | RMAA staff contacts for the quotation form (managed dropdown) |
 | `AuditLog` | Central change tracking across all tables |
 | `UserColumnPreferences` | Per-user column visibility and order |
 
@@ -259,7 +289,10 @@ Each table follows the same REST pattern:
 | POST | `/api/learners/merge` | Merge duplicate learner records |
 | GET | `/api/facilitators` | List all facilitators |
 | DELETE | `/api/facilitators/:id` | Delete a facilitator |
-| GET | `/api/quotation/abattoir-details?name=X` | Fetch abattoir details for quotation auto-fill |
+| GET | `/api/quotation/abattoir-details?name=X` | Fetch abattoir details (incl. postal & street address) for quotation auto-fill |
+| GET/POST | `/api/quotation/rmaa-contacts` | List / add RMAA contacts (quotation dropdown) |
+| DELETE | `/api/quotation/rmaa-contacts/:id` | Delete an RMAA contact |
+| GET | `/api/quotation/preview/:token` | Serve a generated quotation PDF inline with its proper filename |
 | POST | `/api/quotation/generate` | Generate quotation PDF from template (no save) |
 | POST | `/api/quotation/send` | Email quotation PDF + save to document library |
 | GET/PUT | `/api/user-prefs?page=X&userId=Y` | Column visibility + order preferences |

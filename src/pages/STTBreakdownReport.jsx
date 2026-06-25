@@ -119,24 +119,21 @@ const REPORT_COLS = [
   { key: 'province',            label: 'Province',       w: 120 },
   { key: 'municipality',        label: 'Municipality',   w: 130 },
   { key: 'thru_put',            label: 'Throughput',       w: 70  },
-  { key: 'specie',              label: 'Specie',         w: 70  },
+  { key: 'specie',              label: 'Species',        w: 70  },
   { key: 'total_trained',       label: 'No. Trained',    w: 72,  num: true },
+  { key: 'hdis',                label: "HDI's",   w: 48, num: true },
   { key: 'am',                  label: 'AM',  w: 40, num: true },
   { key: 'af',                  label: 'AF',  w: 40, num: true },
   { key: 'ad',                  label: 'AD',  w: 40, num: true },
   { key: 'cm',                  label: 'CM',  w: 40, num: true },
   { key: 'cf',                  label: 'CF',  w: 40, num: true },
-  { key: 'cd',                  label: 'CD',  w: 40, num: true },
   { key: 'im',                  label: 'IM',  w: 40, num: true },
   { key: 'if_',                 label: 'IF',  w: 40, num: true },
-  { key: 'id_2',                label: 'ID',  w: 40, num: true },
   { key: 'wm',                  label: 'WM',  w: 40, num: true },
   { key: 'wf',                  label: 'WF',  w: 40, num: true },
-  { key: 'wd',                  label: 'WD',  w: 40, num: true },
   { key: 'age_lt35',            label: '< 35',    w: 44, num: true },
   { key: 'age_35_55',           label: '35 > 55', w: 52, num: true },
   { key: 'age_gt55',            label: '55 >',    w: 44, num: true },
-  { key: 'hdis',                label: "HDI's",   w: 48, num: true },
   { key: 'disability_count',    label: 'Disability', w: 68, num: true },
 ];
 
@@ -150,6 +147,10 @@ function fmt(dateStr) {
 function sum(rows, key) {
   return rows.reduce((a, r) => a + (parseInt(r[key]) || 0), 0);
 }
+
+// Province values are stored without a separator (e.g. "KwaZuluNatal"); show them with proper formatting.
+const PROVINCE_LABELS = { KwaZuluNatal: 'KwaZulu-Natal' };
+const provLabel = (p) => PROVINCE_LABELS[p] || p || '';
 
 function FilterGroup({ label, children, wide }) {
   return (
@@ -214,7 +215,7 @@ export default function STTBreakdownReport() {
   const hasFilter = !!(fYears.length || fMonths.length || fQuarter || fProvinces.length || fAbattoirs.length);
 
   const titleParts = [];
-  if (fProvinces.length) titleParts.push(fProvinces.join(', '));
+  if (fProvinces.length) titleParts.push(fProvinces.map(provLabel).join(', '));
   if (fYears.length) {
     const yearStr = fYears.join(', ');
     if (fMonths.length) titleParts.push(`${fMonths.map(m => MONTHS.find(x => x.v === m)?.l).join(', ')} ${yearStr}`);
@@ -267,7 +268,7 @@ export default function STTBreakdownReport() {
     // By province
     const byProv = {};
     rows.forEach(r => {
-      const p = r.province || 'Unknown';
+      const p = provLabel(r.province) || 'Unknown';
       if (!byProv[p]) byProv[p] = { name: p, trained: 0 };
       byProv[p].trained += parseInt(r.total_trained) || 0;
     });
@@ -371,7 +372,7 @@ export default function STTBreakdownReport() {
     // Data rows
     const dataRows = sortedRows.length ? sortedRows : rows;
     dataRows.forEach((row, i) => {
-      const vals = REPORT_COLS.map(c => c.fmt ? fmt(row[c.key]) : c.num ? (parseInt(row[c.key]) || 0) : (row[c.key] || ''));
+      const vals = REPORT_COLS.map(c => c.fmt ? fmt(row[c.key]) : c.num ? (parseInt(row[c.key]) || 0) : c.key === 'province' ? provLabel(row[c.key]) : (row[c.key] || ''));
       const r = ws.addRow(vals);
       const stripe = i % 2 === 0 ? 'FFFFFFFF' : 'FFF7F8FA';
       r.eachCell((cell, ci) => {
@@ -393,6 +394,28 @@ export default function STTBreakdownReport() {
     });
     totRow.height = 22;
 
+    // Summary block (mirrors the on-screen mini summary under the table)
+    ws.addRow([]);
+    const thin = { style: 'thin', color: { argb: 'FF000000' } };
+    const summaryRows = [
+      ['Number of visits', rows.length],
+      ['Number of slaughter operators trained', sum(rows, 'total_trained')],
+      ["Number of HDI's", sum(rows, 'hdis')],
+    ];
+    summaryRows.forEach(([label, value]) => {
+      const sr = ws.addRow([label, '', '', value]);
+      ws.mergeCells(sr.number, 1, sr.number, 3);
+      for (let c = 1; c <= 4; c++) sr.getCell(c).border = { top: thin, left: thin, bottom: thin, right: thin };
+      const lc = sr.getCell(1);
+      lc.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+      lc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4B8A' } };
+      lc.alignment = { horizontal: 'left', vertical: 'middle' };
+      const vc = sr.getCell(4);
+      vc.font = { bold: true, size: 10, color: { argb: 'FF323130' } };
+      vc.alignment = { horizontal: 'right', vertical: 'middle' };
+      sr.height = 18;
+    });
+
     // Column widths
     REPORT_COLS.forEach((c, i) => { ws.getColumn(i + 1).width = Math.max(c.w / 7, c.label.length + 2); });
 
@@ -401,7 +424,11 @@ export default function STTBreakdownReport() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'STT_Training_Breakdown.xlsx';
+    const yearLabel = fYears.length ? fYears.join(', ') : 'ALL';
+    const periodLabel = fQuarter ? `${yearLabel} QUARTER ${fQuarter}` : yearLabel;
+    const provincePart = fProvinces.length ? fProvinces.map(provLabel).join(', ') : 'All Provinces';
+    const fileName = `STT Detailed Training Breakdown - ${provincePart} - ${periodLabel}`.replace(/[\\/:*?"<>|]/g, '').slice(0, 180);
+    a.download = `${fileName}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -410,7 +437,7 @@ export default function STTBreakdownReport() {
   const getProvinceSummary = () => {
     const provMap = {};
     rows.forEach(r => {
-      const p = (r.province || 'Unknown').toUpperCase();
+      const p = provLabel(r.province || 'Unknown').toUpperCase();
       if (!provMap[p]) provMap[p] = { province: p, visits: 0, trained: 0, hdis: 0 };
       provMap[p].visits += 1;
       provMap[p].trained += parseInt(r.total_trained) || 0;
@@ -425,11 +452,12 @@ export default function STTBreakdownReport() {
     const ws = wb.addWorksheet('Provincial Summary');
     const provRows = getProvinceSummary();
     const yearLabel = fYears.length ? fYears.join(', ') : 'ALL';
+    const periodLabel = fQuarter ? `${yearLabel} QUARTER ${fQuarter}` : yearLabel;
 
     // Title row
     ws.mergeCells(1, 1, 1, 5);
     const titleCell = ws.getCell(1, 1);
-    titleCell.value = `Provincial Summary — ${yearLabel}`;
+    titleCell.value = `ROUTINE SLAUGHTER TECHNIQUE TRAINING SUMMARY — ${periodLabel}`;
     titleCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
     titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4B8A' } };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
@@ -462,7 +490,7 @@ export default function STTBreakdownReport() {
     const totVisits = provRows.reduce((s, r) => s + r.visits, 0);
     const totTrained = provRows.reduce((s, r) => s + r.trained, 0);
     const totHdis = provRows.reduce((s, r) => s + r.hdis, 0);
-    const totRow = ws.addRow(['', `YEAR TOTALS: ${yearLabel}`, totVisits, totTrained, totHdis]);
+    const totRow = ws.addRow(['', `YEAR TOTALS: ${periodLabel}`, totVisits, totTrained, totHdis]);
     totRow.eachCell((cell, ci) => {
       cell.font = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2E4B8A' } };
@@ -478,7 +506,9 @@ export default function STTBreakdownReport() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'STT_Provincial_Summary.xlsx';
+    const provincePart = fProvinces.length ? fProvinces.map(provLabel).join(', ') : 'All Provinces';
+    const fileName = `STT Provincial Summary - ${provincePart} - ${periodLabel}`.replace(/[\\/:*?"<>|]/g, '').slice(0, 180);
+    a.download = `${fileName}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -521,7 +551,33 @@ export default function STTBreakdownReport() {
     <div style={s.page} className="page-print">
       <style>{`
         @media print {
+          @page { size: A4 landscape; margin: 8mm; }
+
+          /* Print background colours exactly as shown on screen (navy headers, zebra stripes, totals) */
+          *, *::before, *::after {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+
           .no-print { display: none !important; }
+
+          /* Relax the app's full-height / scrolling shell so the report flows across A4 pages */
+          html, body { height: auto !important; overflow: visible !important; background: #fff !important; }
+          .page-print { height: auto !important; overflow: visible !important; background: #fff !important; }
+          .body-print { height: auto !important; overflow: visible !important; padding: 0 !important; gap: 0 !important; }
+          .report-print { flex: none !important; height: auto !important; overflow: visible !important; box-shadow: none !important; }
+
+          /* Fit the wide table to the page width without clipping (or shrinking too far) */
+          .report-print th, .report-print td { min-width: 0 !important; max-width: none !important; white-space: normal !important; word-break: break-word; }
+          .report-print thead th { position: static !important; font-size: 0.6rem !important; padding: 4px 5px !important; }
+          .report-print tbody td { font-size: 0.62rem !important; padding: 3px 5px !important; }
+          .report-print tfoot td { font-size: 0.62rem !important; padding: 4px 5px !important; }
+
+          /* Repeat the navy header on every page; keep rows and the totals/summary intact */
+          .report-print thead { display: table-header-group; }
+          .report-print tfoot { display: table-row-group; }
+          .report-print tr { break-inside: avoid; page-break-inside: avoid; }
+          .summary-table { break-inside: avoid; page-break-inside: avoid; margin: 12px auto !important; }
         }
       `}</style>
 
@@ -563,7 +619,7 @@ export default function STTBreakdownReport() {
               {sel(fQuarter, e => { setFQuarter(e.target.value); setFMonths([]); }, QUARTERS, 'All Quarters', !fYears.length)}
             </FilterGroup>
             <FilterGroup label="Province">
-              <MultiFilter label="All Provinces" options={provinceOpts.map(p => ({ value: p, label: p }))} selected={fProvinces} onChange={setFProvinces} />
+              <MultiFilter label="All Provinces" options={provinceOpts.map(p => ({ value: p, label: provLabel(p) }))} selected={fProvinces} onChange={setFProvinces} />
             </FilterGroup>
             {view !== 'province' && (
               <FilterGroup label="Abattoir">
@@ -752,10 +808,11 @@ export default function STTBreakdownReport() {
           const totTrained = provRows.reduce((s, r) => s + r.trained, 0);
           const totHdis = provRows.reduce((s, r) => s + r.hdis, 0);
           const yearLabel = fYears.length ? fYears.join(', ') : 'ALL';
+          const periodLabel = fQuarter ? `${yearLabel} QUARTER ${fQuarter}` : yearLabel;
           return (
-            <div style={{ background: '#fff', border: '1px solid #e1e4e8', borderRadius: 4, overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', flex: 1, minHeight: 0 }}>
+            <div className="report-print" style={{ background: '#fff', border: '1px solid #e1e4e8', borderRadius: 4, overflow: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', flex: 1, minHeight: 0 }}>
               <div style={{ background: HEADER_BG, color: '#fff', fontWeight: 700, fontSize: '0.88rem', textAlign: 'center', padding: '11px 16px', letterSpacing: '0.03em' }}>
-                Provincial Summary
+                ROUTINE SLAUGHTER TECHNIQUE TRAINING SUMMARY
               </div>
               {loading ? (
                 <div style={s.loadMsg}>Loading…</div>
@@ -785,7 +842,7 @@ export default function STTBreakdownReport() {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <td colSpan={2} style={{ ...s.totalsLabel, textAlign: 'right', paddingRight: 16 }}>YEAR TOTALS: {yearLabel}</td>
+                      <td colSpan={2} style={{ ...s.totalsLabel, textAlign: 'right', paddingRight: 16 }}>YEAR TOTALS: {periodLabel}</td>
                       <td style={{ ...s.totalsCell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{totVisits.toLocaleString()}</td>
                       <td style={{ ...s.totalsCell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{totTrained.toLocaleString()}</td>
                       <td style={{ ...s.totalsCell, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{totHdis.toLocaleString()}</td>
@@ -798,11 +855,12 @@ export default function STTBreakdownReport() {
         })()}
 
         {/* ── Table ── */}
-        <div style={{ ...s.tableWrap, display: view === 'table' ? 'flex' : 'none', flexDirection: 'column' }}>
+        <div className="report-print" style={{ ...s.tableWrap, display: view === 'table' ? 'flex' : 'none', flexDirection: 'column' }}>
           <div style={s.reportTitle}>{reportTitle}</div>
           {loading ? (
             <div style={s.loadMsg}>Loading…</div>
           ) : (
+            <>
             <table style={s.table}>
               <thead>
                 <tr>
@@ -829,7 +887,7 @@ export default function STTBreakdownReport() {
                 {sortedRows.map((row, i) => (
                   <tr key={i} style={{ background: i % 2 === 0 ? '#ffffff' : '#f7f8fa' }}>
                     {REPORT_COLS.map(col => {
-                      const val = col.fmt ? fmt(row[col.key]) : col.num ? (parseInt(row[col.key]) || 0) : (row[col.key] || '');
+                      const val = col.fmt ? fmt(row[col.key]) : col.num ? (parseInt(row[col.key]) || 0) : col.key === 'province' ? provLabel(row[col.key]) : (row[col.key] || '');
                       const extra = col.key === 'training_start_date' ? { fontWeight: 600, color: HEADER_BG }
                         : col.key === 'abattoir_name' ? { fontWeight: 600 }
                         : col.key === 'total_trained' ? { fontWeight: 600 }
@@ -846,18 +904,37 @@ export default function STTBreakdownReport() {
                   <tr>
                     <td colSpan={6} style={s.totalsLabel}>TOTALS</td>
                     <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'total_trained')}</td>
-                    {['am','af','ad','cm','cf','cd','im','if_','id_2','wm','wf','wd'].map(k => (
+                    <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'hdis')}</td>
+                    {['am','af','ad','cm','cf','im','if_','wm','wf'].map(k => (
                       <td key={k} style={{ ...s.totalsCell, ...s.num }}>{sum(rows,k)}</td>
                     ))}
                     <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'age_lt35')}</td>
                     <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'age_35_55')}</td>
                     <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'age_gt55')}</td>
-                    <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'hdis')}</td>
                     <td style={{ ...s.totalsCell, ...s.num }}>{sum(rows,'disability_count')}</td>
                   </tr>
                 </tfoot>
               )}
             </table>
+            {rows.length > 0 && (
+              <table className="summary-table" style={s.summaryTable}>
+                <tbody>
+                  <tr>
+                    <td style={s.summaryLabel}>Number of visits</td>
+                    <td style={s.summaryValue}>{rows.length.toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style={s.summaryLabel}>Number of slaughter operators trained</td>
+                    <td style={s.summaryValue}>{sum(rows, 'total_trained').toLocaleString()}</td>
+                  </tr>
+                  <tr>
+                    <td style={s.summaryLabel}>Number of HDI's</td>
+                    <td style={s.summaryValue}>{sum(rows, 'hdis').toLocaleString()}</td>
+                  </tr>
+                </tbody>
+              </table>
+            )}
+            </>
           )}
         </div>
       </div>
@@ -912,6 +989,11 @@ const s = {
   num:          { textAlign: 'right', fontVariantNumeric: 'tabular-nums' },
   totalsLabel:  { padding: '7px 9px', background: HEADER_BG, color: '#fff', fontWeight: 700, fontSize: '0.73rem', borderRight: '1px solid rgba(255,255,255,0.15)' },
   totalsCell:   { padding: '7px 9px', background: HEADER_BG, color: '#fff', fontWeight: 700, fontSize: '0.73rem', borderRight: '1px solid rgba(255,255,255,0.15)' },
+
+  // Summary mini-table under the All Data view — matches the data table's navy theme
+  summaryTable: { borderCollapse: 'collapse', margin: '16px auto 8px', border: `1px solid ${HEADER_BG}`, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' },
+  summaryLabel: { background: HEADER_BG, color: '#fff', fontWeight: 700, fontSize: '0.73rem', padding: '7px 16px', textAlign: 'left', whiteSpace: 'nowrap', borderBottom: '1px solid rgba(255,255,255,0.18)' },
+  summaryValue: { background: '#fff', color: '#323130', fontWeight: 700, fontSize: '0.73rem', padding: '7px 18px', textAlign: 'right', fontVariantNumeric: 'tabular-nums', borderLeft: `1px solid ${HEADER_BG}`, borderBottom: '1px solid #eef0f2', minWidth: 90 },
 
   // View toggle
   viewToggle:   { display: 'flex', border: '1px solid #8a8886', borderRadius: 2, overflow: 'hidden' },

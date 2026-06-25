@@ -85,6 +85,9 @@ urlpatterns = [
 
     # quotation
     path('quotation/abattoir-details', v.quotation_abattoir_details_view),
+    path('quotation/rmaa-contacts', v.rmaa_contacts_view),
+    path('quotation/rmaa-contacts/<int:pk>', v.rmaa_contact_delete_view),
+    path('quotation/preview/<str:token>', v.quotation_preview_view),
     path('quotation/generate', v.quotation_generate_view),
     path('quotation/send', v.quotation_send_view),
 

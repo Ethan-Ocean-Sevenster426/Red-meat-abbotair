@@ -44,7 +44,7 @@ from .helpers import (
 from .models import (
     AbattoirMaster, TransformationMaster, GovernmentMaster, IndustryMaster,
     AssociatedMembersMaster, STTTrainingReport, TrainingReport,
-    CustomAbattoir, Facilitator, FeeStructure, Learner, User, Invitation, UserColumnPreferences,
+    CustomAbattoir, RmaaContact, Facilitator, FeeStructure, Learner, User, Invitation, UserColumnPreferences,
 )
 
 
@@ -475,6 +475,14 @@ def abattoir_send_form_view(request, pk):
         'QAManager': v(row['qa_manager']), 'FloorSupervisor': v(row['floor_supervisor']),
         'PhysicalAddress': v(row['physical_address']),
         'GPSCoordinates': ' / '.join([x for x in [row.get('gps_1'), row.get('gps_2')] if x]),
+        # Market Access / Export Related Matters contact
+        'Matters Contact Name': v(row.get('market_access_export_contact_name')),
+        'Matters Contact Email': v(row.get('market_access_export_contact_email')),
+        'Matters Contact Cell': v(row.get('market_access_export_contact_cell')),
+        # Market Access — Authorised Private Veterinarian contact
+        'Veterinarian Contact Name': v(row.get('market_access_apv_contact_name')),
+        'Veterinarian Contact Email': v(row.get('market_access_apv_contact_email')),
+        'Veterinarian Contact Cell': v(row.get('market_access_apv_contact_cell')),
     }
 
     template_path = Path(settings.PROJECT_ROOT) / 'RMAA Database Form.docx'
@@ -1293,6 +1301,7 @@ def quotation_abattoir_details_view(request):
     with connection.cursor() as c:
         c.execute(
             f"""SELECT abattoir_name, rc_nr, lh, vat_number, province, municipality,
+                       postal_address, city, postal_code, physical_address,
                        {member_col} AS is_member
                 FROM AbattoirMaster WHERE abattoir_name = %s""",
             [name],
@@ -1302,6 +1311,14 @@ def quotation_abattoir_details_view(request):
         return Response({'found': False})
     row = rows[0]
     is_member = 'Yes' if 'member' in (row.get('is_member') or '').lower() else 'No'
+
+    # Build a single-line postal address: "P O Box 442, Uitenhage, 6056"
+    code = (row.get('postal_code') or '').replace(',', '').strip()
+    postal_bits = [(row.get('postal_address') or '').strip(), (row.get('city') or '').strip(), code]
+    postal_address = ', '.join(b for b in postal_bits if b)
+    # Collapse the (often multi-line) physical address into one tidy line
+    street_address = re.sub(r'\s+', ' ', (row.get('physical_address') or '').replace('\n', ' ')).strip()
+
     return Response({
         'found': True,
         'abattoir_name': row['abattoir_name'],
@@ -1310,8 +1327,30 @@ def quotation_abattoir_details_view(request):
         'vat_number': row.get('vat_number') or '',
         'province': row.get('province') or '',
         'municipality': row.get('municipality') or '',
+        'postal_address': postal_address,
+        'street_address': street_address,
         'is_member': is_member,
     })
+
+
+@api_view(['GET', 'POST'])
+def rmaa_contacts_view(request):
+    if request.method == 'POST':
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            return Response({'message': 'Name is required.'}, status=400)
+        if RmaaContact.objects.filter(name=name).exists():
+            return Response({'message': 'Contact already exists.'}, status=400)
+        r = RmaaContact.objects.create(name=name)
+        return Response({'ok': True, 'id': r.id, 'name': r.name})
+    contacts = list(RmaaContact.objects.order_by('name').values('id', 'name'))
+    return Response({'contacts': contacts})
+
+
+@api_view(['DELETE'])
+def rmaa_contact_delete_view(request, pk):
+    RmaaContact.objects.filter(id=pk).delete()
+    return Response({'ok': True})
 
 
 @api_view(['POST'])
@@ -1389,7 +1428,7 @@ def quotation_generate_view(request):
         aud_qty = aud.get('qty') or ''
         aud_cost = safe_float(aud.get('cost'))
         if aud_qty:
-            cell_updates['B30'] = f"Verification Audit x {aud_qty}"
+            cell_updates['B30'] = f"Audit Verification x {aud_qty}"
             cell_updates['F30'] = aud_cost * int(aud_qty) if aud_cost is not None else ''
             cell_updates['G30'] = safe_float(aud.get('distance')) or ''
             cell_updates['H30'] = safe_float(aud.get('accommodation')) or ''
@@ -1398,9 +1437,9 @@ def quotation_generate_view(request):
         disc = data.get('discounts')
         if disc:
             disc_rows = [
-                (34, 'Skills Program', 'skillsAmount', 'skillsKm', 'skillsAccomm'),
+                (34, 'Skills Programme', 'skillsAmount', 'skillsKm', 'skillsAccomm'),
                 (35, 'Sampling', 'samplingAmount', 'samplingKm', 'samplingAccomm'),
-                (36, 'Verification Audit', 'auditAmount', 'auditKm', 'auditAccomm'),
+                (36, 'Audit Verification', 'auditAmount', 'auditKm', 'auditAccomm'),
                 (37, 'Membership', 'membershipAmount', 'membershipKm', 'membershipAccomm'),
             ]
             for row, label, amt_key, km_key, acc_key in disc_rows:
@@ -1416,17 +1455,51 @@ def quotation_generate_view(request):
         xlsx_bytes = email_svc.modify_xlsx_cells(template_bytes, cell_updates)
         pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$45', setup_page=True)
         folder = f"Quotation {date_str.replace('/', '-')} {sanitize_fs_name(data.get('clientName'))}"
+
+        # Stash the PDF so the in-browser preview can be served with a real
+        # Content-Disposition filename — a data-URL preview downloads as "Download.pdf".
+        import uuid
+        preview_dir = Path(settings.PROJECT_ROOT) / 'temp' / 'quote-previews'
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        cutoff = datetime.now().timestamp() - 7200  # prune previews older than 2h
+        for old in preview_dir.glob('*.pdf'):
+            try:
+                if old.stat().st_mtime < cutoff:
+                    old.unlink()
+            except OSError:
+                pass
+        preview_token = uuid.uuid4().hex
+        (preview_dir / f'{preview_token}.pdf').write_bytes(pdf_bytes)
+
         return Response({
             'ok': True,
             'pdfBase64': base64.b64encode(pdf_bytes).decode('ascii'),
             'xlsxBase64': base64.b64encode(xlsx_bytes).decode('ascii'),
             'fileName': f'{folder}.pdf',
             'folderName': folder,
+            'previewToken': preview_token,
             'province': data.get('province') or '',
             'clientName': data.get('clientName') or '',
         })
     except Exception as e:
         return Response({'message': str(e)}, status=500)
+
+
+@api_view(['GET'])
+def quotation_preview_view(request, token):
+    """Serve a freshly generated quotation PDF inline, with a proper filename so
+    the browser's PDF viewer download uses the quotation name (not 'Download.pdf')."""
+    if not re.fullmatch(r'[0-9a-f]{32}', token or ''):
+        return Response({'message': 'Invalid token'}, status=400)
+    fpath = Path(settings.PROJECT_ROOT) / 'temp' / 'quote-previews' / f'{token}.pdf'
+    if not fpath.exists():
+        return Response({'message': 'Preview not found or expired.'}, status=404)
+    name = re.sub(r'[\r\n"\\/]+', '', request.query_params.get('name') or 'Quotation.pdf')
+    if not name.lower().endswith('.pdf'):
+        name += '.pdf'
+    resp = FileResponse(fpath.open('rb'), content_type='application/pdf', filename=name)
+    resp['X-Frame-Options'] = 'SAMEORIGIN'
+    return resp
 
 
 @api_view(['POST'])

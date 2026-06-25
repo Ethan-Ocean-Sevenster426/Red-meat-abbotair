@@ -12,6 +12,11 @@ const PROVINCE_OPTS  = ['','Eastern Cape','Free State','Gauteng','KwaZulu-Natal'
 const DISABILITY_OPTS = ['', 'Yes', 'No'];
 const ONE_OPTS       = ['', '1'];
 
+// Province values are stored without a separator (e.g. "KwaZuluNatal"); the UI shows the proper hyphenated name.
+const PROVINCE_ALIASES = { 'KwaZulu-Natal': 'KwaZuluNatal' };          // display label -> value stored in the DB
+const toStoredProvince = (p) => PROVINCE_ALIASES[p] || p;
+const provinceLabel    = (p) => (p === 'KwaZuluNatal' ? 'KwaZulu-Natal' : p);
+
 const COLUMNS = [
   { key: 'id',                  label: 'ID',                   w: 50,  readonly: true },
   { key: 'province',            label: 'Province',             w: 130, opts: PROVINCE_OPTS },
@@ -118,7 +123,7 @@ export default function STTTrainingReport() {
       const params = new URLSearchParams({ page: pg, size: PAGE_SIZE });
       if (sortColRef.current) { params.set('sortCol', sortColRef.current); params.set('sortDir', sortDirRef.current); }
       for (const [k, v] of Object.entries(filters)) {
-        if (v) params.set(k, v);
+        if (v) params.set(k, k === 'province' ? toStoredProvince(v) : v);
       }
       if (idCheck) params.set('_idCheck', idCheck);
       const res  = await fetch(`/api/stt-training-report?${params}`);
@@ -700,7 +705,7 @@ export default function STTTrainingReport() {
       const { exportStyledExcel } = await import('../utils/exportStyledExcel.js');
       const params = new URLSearchParams({ page: 1, size: 99999 });
       if (sortColRef.current) { params.set('sortCol', sortColRef.current); params.set('sortDir', sortDirRef.current); }
-      for (const [k, v] of Object.entries(appliedFilters)) { if (v) params.set(k, v); }
+      for (const [k, v] of Object.entries(appliedFilters)) { if (v) params.set(k, k === 'province' ? toStoredProvince(v) : v); }
       if (idCheck) params.set('_idCheck', idCheck);
       const res = await fetch(`/api/stt-training-report?${params}`);
       const data = await res.json();
@@ -708,7 +713,7 @@ export default function STTTrainingReport() {
       const visibleCols = orderedColumns.filter(c => !hiddenCols.has(c.key));
       await exportStyledExcel({
         columns: visibleCols,
-        rows: data.rows,
+        rows: data.rows.map(r => ({ ...r, province: provinceLabel(r.province) })),
         sheetName: 'STT Training Report',
         fileName: 'STT_Training_Report.xlsx',
       });
@@ -885,14 +890,15 @@ export default function STTTrainingReport() {
                         );
                       }
                       if (col.opts) {
+                        const selVal = col.key === 'province' ? toStoredProvince(val) : val;
                         return (
                           <td key={col.key} title={val} style={{ ...s.td, minWidth: col.w, maxWidth: col.w }}>
                             <select
                               style={s.cellSelect}
-                              value={val}
+                              value={selVal}
                               onChange={e => editCell(row.id, col.key, e.target.value, row)}
                             >
-                              {col.opts.map(o => <option key={o} value={o}>{o || ''}</option>)}
+                              {col.opts.map(o => <option key={o} value={col.key === 'province' ? toStoredProvince(o) : o}>{o || ''}</option>)}
                             </select>
                           </td>
                         );
@@ -958,7 +964,7 @@ export default function STTTrainingReport() {
                       value={newEntry[col.key] || ''}
                       onChange={e => handleNewEntryChange(col.key, e.target.value)}
                     >
-                      {col.opts.map(o => <option key={o} value={o}>{o || '-- Select --'}</option>)}
+                      {col.opts.map(o => <option key={o} value={col.key === 'province' ? toStoredProvince(o) : o}>{o || '-- Select --'}</option>)}
                     </select>
                   ) : (
                     <input
@@ -1061,7 +1067,7 @@ export default function STTTrainingReport() {
                     <div>
                       <label style={su.label}>Province <span style={{ color: '#d13438' }}>*</span></label>
                       <select value={uploadProvince} onChange={e => setUploadProvince(e.target.value)} style={su.select}>
-                        {PROVINCE_OPTS.map(o => <option key={o} value={o}>{o || '— Select province —'}</option>)}
+                        {PROVINCE_OPTS.map(o => <option key={o} value={toStoredProvince(o)}>{o || '— Select province —'}</option>)}
                       </select>
                     </div>
 

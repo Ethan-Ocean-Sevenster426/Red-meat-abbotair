@@ -19,6 +19,9 @@ export default function NewQuote() {
     fetch('/api/abattoir/names').then(r => r.json()).then(d => {
       if (Array.isArray(d.registered)) setAbattoirList(d);
     }).catch(() => {});
+    fetch('/api/quotation/rmaa-contacts').then(r => r.json()).then(d => {
+      if (Array.isArray(d.contacts)) setRmaaContacts(d.contacts);
+    }).catch(() => {});
     fetch('/api/fee-structure?page=1&size=200&sortCol=sort_order&sortDir=asc').then(r => r.json()).then(d => {
       const all = d.rows || [];
       const skillsCats = new Set(['Credit Bearing (AgriSETA)', 'Non-Credit Bearing', 'Traveling']);
@@ -71,6 +74,10 @@ export default function NewQuote() {
   ]);
   const [newCcEmail, setNewCcEmail] = useState('');
 
+  const [rmaaContacts, setRmaaContacts] = useState([]);
+  const [newContactName, setNewContactName] = useState('');
+  const [addingContact, setAddingContact] = useState(false);
+
   const [customAbattoirInput, setCustomAbattoirInput] = useState('');
   const [addingCustom, setAddingCustom] = useState(false);
 
@@ -94,6 +101,8 @@ export default function NewQuote() {
         setThroughput(data.thru_put || '');
         setVatNumber(data.vat_number || '');
         if (data.province) setProvince(data.province);
+        if (data.postal_address) setPostalAddress(data.postal_address);
+        if (data.street_address) setStreetAddress(data.street_address);
       } else {
         setRmaaMember(''); setRc(''); setThroughput('');
       }
@@ -118,6 +127,40 @@ export default function NewQuote() {
       setError('Failed to add abattoir: ' + e.message);
     }
     setAddingCustom(false);
+  };
+
+  const addRmaaContact = async () => {
+    const name = newContactName.trim();
+    if (!name) return;
+    try {
+      const res = await fetch('/api/quotation/rmaa-contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || 'Failed to add');
+      setRmaaContacts(prev => [...prev, { id: data.id, name: data.name }].sort((a, b) => a.name.localeCompare(b.name)));
+      setRmaaContact(data.name);
+      setNewContactName('');
+      setAddingContact(false);
+    } catch (e) {
+      setError('Failed to add contact: ' + e.message);
+    }
+  };
+
+  const deleteRmaaContact = async () => {
+    const c = rmaaContacts.find(x => x.name === rmaaContact);
+    if (!c) return;
+    if (!window.confirm(`Delete RMAA contact "${c.name}"?`)) return;
+    try {
+      const res = await fetch(`/api/quotation/rmaa-contacts/${c.id}`, { method: 'DELETE' });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.message || 'Failed to delete'); }
+      setRmaaContacts(prev => prev.filter(x => x.id !== c.id));
+      setRmaaContact('');
+    } catch (e) {
+      setError('Failed to delete contact: ' + e.message);
+    }
   };
 
   const isMember = rmaaMember && rmaaMember.toLowerCase() === 'yes';
@@ -217,7 +260,7 @@ export default function NewQuote() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
-      setPdfData({ pdfBase64: data.pdfBase64, xlsxBase64: data.xlsxBase64, fileName: data.fileName, folderName: data.folderName });
+      setPdfData({ pdfBase64: data.pdfBase64, xlsxBase64: data.xlsxBase64, fileName: data.fileName, folderName: data.folderName, previewToken: data.previewToken });
       setStep('review');
     } catch (e) {
       setError('Failed to generate: ' + e.message);
@@ -256,7 +299,7 @@ export default function NewQuote() {
     setSampling({ qty: '', cost: '', distance: '', accommodation: '' });
     setAudit({ qty: '', cost: '', distance: '', accommodation: '' });
     setDiscounts({ skillsAmount: '', skillsKm: '', skillsAccomm: '', samplingAmount: '', samplingKm: '', samplingAccomm: '', auditAmount: '', auditKm: '', auditAccomm: '', membershipAmount: '', membershipKm: '', membershipAccomm: '' });
-    setPdfData(null); setError(''); setSuccess(''); setCustomAbattoirInput('');
+    setPdfData(null); setError(''); setSuccess(''); setCustomAbattoirInput(''); setNewContactName(''); setAddingContact(false);
   };
 
   const fmtCurrency = (n) => `R ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -383,7 +426,35 @@ export default function NewQuote() {
                     </div>
                     <div>
                       <label style={s.label}>RMAA Contact <span style={s.req}>*</span></label>
-                      <input type="text" value={rmaaContact} onChange={e => setRmaaContact(e.target.value)} style={s.input} />
+                      {addingContact ? (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <input type="text" autoFocus value={newContactName}
+                            onChange={e => setNewContactName(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') { e.preventDefault(); addRmaaContact(); }
+                              if (e.key === 'Escape') { setAddingContact(false); setNewContactName(''); }
+                            }}
+                            placeholder="New contact name" style={{ ...s.input, flex: 1 }} />
+                          <button type="button" onClick={addRmaaContact} title="Save contact" style={s.iconBtnPrimary}>Add</button>
+                          <button type="button" onClick={() => { setAddingContact(false); setNewContactName(''); }} title="Cancel" style={s.iconBtn}>✕</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <select value={rmaaContact}
+                            onChange={e => { if (e.target.value === '__add_new__') { setNewContactName(''); setAddingContact(true); } else setRmaaContact(e.target.value); }}
+                            style={{ ...s.select, flex: 1 }}>
+                            <option value="">— Select contact —</option>
+                            {rmaaContacts.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                            {rmaaContact && !rmaaContacts.some(c => c.name === rmaaContact) && (
+                              <option value={rmaaContact}>{rmaaContact}</option>
+                            )}
+                            <option value="__add_new__">+ Add new contact…</option>
+                          </select>
+                          {rmaaContacts.some(c => c.name === rmaaContact) && (
+                            <button type="button" onClick={deleteRmaaContact} title="Delete this contact" style={s.iconBtnDanger}>🗑</button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* CC Recipients */}
@@ -553,7 +624,7 @@ export default function NewQuote() {
                           {[
                             { label: 'Skills Programme', keys: ['skillsAmount', 'skillsKm', 'skillsAccomm'] },
                             { label: 'Sampling', keys: ['samplingAmount', 'samplingKm', 'samplingAccomm'] },
-                            { label: 'Verification Audit', keys: ['auditAmount', 'auditKm', 'auditAccomm'] },
+                            { label: 'Audit Verification', keys: ['auditAmount', 'auditKm', 'auditAccomm'] },
                             { label: 'Membership', keys: ['membershipAmount', 'membershipKm', 'membershipAccomm'] },
                           ].map(({ label, keys }) => (
                             <tr key={label}>
@@ -596,7 +667,9 @@ export default function NewQuote() {
                   {pdfData && (
                     <iframe
                       title="Quotation PDF Preview"
-                      src={`data:application/pdf;base64,${pdfData.pdfBase64}`}
+                      src={pdfData.previewToken
+                        ? `/api/quotation/preview/${pdfData.previewToken}?name=${encodeURIComponent(pdfData.fileName || 'Quotation.pdf')}`
+                        : `data:application/pdf;base64,${pdfData.pdfBase64}`}
                       style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
                     />
                   )}
@@ -689,6 +762,9 @@ const s = {
   req:         { color: '#d13438' },
   input:       { width: '100%', boxSizing: 'border-box', border: '1px solid #c8c6c4', borderRadius: '2px', padding: '6px 10px', fontSize: '0.82rem', color: '#323130', outline: 'none', background: '#fff' },
   select:      { width: '100%', boxSizing: 'border-box', border: '1px solid #c8c6c4', borderRadius: '2px', padding: '6px 10px', fontSize: '0.82rem', color: '#323130', outline: 'none', background: '#fff', cursor: 'pointer' },
+  iconBtn:        { background: '#fff', border: '1px solid #c8c6c4', color: '#605e5c', borderRadius: '2px', padding: '0 11px', cursor: 'pointer', fontSize: '0.82rem', width: 'auto', flexShrink: 0 },
+  iconBtnPrimary: { background: '#0078d4', border: '1px solid #0078d4', color: '#fff', borderRadius: '2px', padding: '0 12px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, width: 'auto', flexShrink: 0, whiteSpace: 'nowrap' },
+  iconBtnDanger:  { background: '#fff', border: '1px solid #e6b3b8', color: '#a4262c', borderRadius: '2px', padding: '0 11px', cursor: 'pointer', fontSize: '0.85rem', width: 'auto', flexShrink: 0 },
 
   // Table
   table:       { borderCollapse: 'collapse', width: '100%', marginTop: 8 },

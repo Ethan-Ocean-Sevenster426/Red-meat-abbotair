@@ -128,6 +128,12 @@ class AbattoirMaster(AuditFieldsMixin):
     db_updated = models.CharField(max_length=100, null=True, blank=True)
     latest_update_received = models.CharField(max_length=255, null=True, blank=True)
     db_comment = models.TextField(null=True, blank=True)
+    market_access_export_contact_name = models.CharField(max_length=255, null=True, blank=True)
+    market_access_export_contact_email = models.CharField(max_length=255, null=True, blank=True)
+    market_access_export_contact_cell = models.CharField(max_length=100, null=True, blank=True)
+    market_access_apv_contact_name = models.CharField(max_length=255, null=True, blank=True)
+    market_access_apv_contact_email = models.CharField(max_length=255, null=True, blank=True)
+    market_access_apv_contact_cell = models.CharField(max_length=100, null=True, blank=True)
 
     class Meta:
         db_table = 'AbattoirMaster'
@@ -475,6 +481,14 @@ class CustomAbattoir(models.Model):
 
     class Meta:
         db_table = 'CustomAbattoirs'
+
+
+class RmaaContact(models.Model):
+    name = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+
+    class Meta:
+        db_table = 'RmaaContacts'
 
 
 class Learner(AuditFieldsMixin):

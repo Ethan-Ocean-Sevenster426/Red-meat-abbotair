@@ -17,7 +17,11 @@ ABATTOIR_COLS = [
     'horses', 'kosher', 'halaal', 'classification', 'grader', 'deboning_plant',
     'processing_plant', 'rendering_plant', 'residue', 'member_2018', 'member_2019',
     'member_2020', 'member_2021', 'member_2022', 'member_2023', 'member_2024', 'member_2025',
-    'member_2026', 'other_comments', 'modified_by', 'modified_time', 'modified_fields',
+    'member_2026', 'other_comments',
+    'market_access_export_contact_name', 'market_access_export_contact_email',
+    'market_access_export_contact_cell', 'market_access_apv_contact_name',
+    'market_access_apv_contact_email', 'market_access_apv_contact_cell',
+    'modified_by', 'modified_time', 'modified_fields',
     'old_values', 'new_values', 'can_mail', 'date_mail_sent', 'verification',
     'db_updated', 'latest_update_received', 'db_comment',
 ]
