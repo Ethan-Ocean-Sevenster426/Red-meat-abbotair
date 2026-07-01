@@ -7,7 +7,7 @@ import AuditLogModal from '../components/AuditLogModal.jsx';
 
 // ─── Column definitions ───────────────────────────────────────────────────────
 
-const PROVINCE_OPTS = ['','Eastern Cape','Free State','Gauteng','KZN','Limpopo','Mpumalanga','North West','Northern Cape','Western Cape'];
+const PROVINCE_OPTS = ['','Gauteng','Limpopo','North West','Free State','KZN','Eastern Cape','Western Cape','Mpumalanga','Northern Cape'];
 const STATUS_OPTS   = ['','Active','Closed','Inactive'];
 const VERIFY_OPTS   = ['','Pending Review','Reviewed'];
 const MAIL_OPTS     = ['','Send','No'];

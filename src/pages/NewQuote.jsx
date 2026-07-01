@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 
-const PROVINCE_OPTS = ['','Eastern Cape','Free State','Gauteng','KwaZulu-Natal','Limpopo','Mpumalanga','North West','Northern Cape','Western Cape'];
+const PROVINCE_OPTS = ['','Gauteng','Limpopo','North West','Free State','KwaZulu-Natal','Eastern Cape','Western Cape','Mpumalanga','Northern Cape'];
 
 export default function NewQuote() {
   const { user, logout } = useAuth();

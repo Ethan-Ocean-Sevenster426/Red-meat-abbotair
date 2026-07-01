@@ -70,9 +70,9 @@ const DATE_RE = /^\d{2}\/\d{2}\/\d{4}$/;
 const SPECIES_OPTS    = ['Bovine', 'Ovine', 'Porcine', 'Poultry'];
 const SAMPLE_TYPE_OPTS = ['Fat', 'Kidney', 'Liver', 'Muscle'];
 const PROVINCE_OPTS   = [
-  'Eastern Cape', 'Free State', 'Gauteng',
+  'Gauteng', 'Limpopo', 'North West', 'Free State',
   'KZN', 'KwaZulu-Natal', 'KwaZulu Natal',
-  'Limpopo', 'Mpumalanga', 'Northern Cape', 'North West', 'Western Cape',
+  'Eastern Cape', 'Western Cape', 'Mpumalanga', 'Northern Cape',
 ];
 
 const RULES = {
