@@ -32,7 +32,7 @@ const COLUMNS = [
   { key: 'training_end_date',   label: 'End Date',              w: 110 },
   { key: 'abattoir_name',       label: 'Abattoir Name',         w: 200 },
   { key: 'thru_put',            label: 'Throughput (L/H)',        w: 100 },
-  { key: 'specie',              label: 'Specie',                w: 100 },
+  { key: 'specie',              label: 'Species',               w: 100 },
   { key: 'work_station',        label: 'Work Station',          w: 130 },
   { key: 'report_to_client',    label: 'Report To Client',      w: 130 },
   { key: 'reported_by',         label: 'Reported By',           w: 150, dynamic: 'facilitator' },
@@ -618,7 +618,7 @@ export default function STTTrainingReport() {
     if (!uploadProvince)    missing.push('Province');
     if (!uploadMunicipality.trim()) missing.push('District / Municipality');
     if (!uploadProgramme.trim())    missing.push('Training Programme');
-    if (!uploadSpecie.trim())       missing.push('Specie');
+    if (!uploadSpecie.trim())       missing.push('Species');
     if (!uploadFacilitator.trim())  missing.push('Facilitator');
     if (!uploadContact.trim())      missing.push('Contact Number');
     if (!uploadDateStart)           missing.push('Training Start Date');
@@ -1089,9 +1089,9 @@ export default function STTTrainingReport() {
                       <input type="text" value={uploadProgramme} onChange={e => setUploadProgramme(e.target.value)} style={su.input} placeholder="e.g. Slaughter Technique Training" />
                     </div>
 
-                    {/* Specie */}
+                    {/* Species */}
                     <div>
-                      <label style={su.label}>Specie <span style={{ color: '#d13438' }}>*</span></label>
+                      <label style={su.label}>Species <span style={{ color: '#d13438' }}>*</span></label>
                       <input type="text" value={uploadSpecie} onChange={e => setUploadSpecie(e.target.value)} style={su.input} placeholder="e.g. Cattle" />
                     </div>
 
