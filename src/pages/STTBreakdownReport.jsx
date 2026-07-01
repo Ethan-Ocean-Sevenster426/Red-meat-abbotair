@@ -10,6 +10,8 @@ const MONTHS = [
   { v: 7, l: 'July' },    { v: 8, l: 'August' },    { v: 9, l: 'September' },
   { v: 10, l: 'October' },{ v: 11, l: 'November' },  { v: 12, l: 'December' },
 ];
+const PROVINCE_ORDER = ['GAUTENG','LIMPOPO','NORTH WEST','FREE STATE','KWAZULU-NATAL','EASTERN CAPE','WESTERN CAPE','MPUMALANGA','NORTHERN CAPE'];
+const provSortIdx = (name) => { const i = PROVINCE_ORDER.indexOf(name.toUpperCase()); return i === -1 ? 999 : i; };
 const QUARTERS = [
   { v: 1, l: 'Q1 (Jan – Mar)' }, { v: 2, l: 'Q2 (Apr – Jun)' },
   { v: 3, l: 'Q3 (Jul – Sep)' }, { v: 4, l: 'Q4 (Oct – Dec)' },
@@ -272,7 +274,7 @@ export default function STTBreakdownReport() {
       if (!byProv[p]) byProv[p] = { name: p, trained: 0 };
       byProv[p].trained += parseInt(r.total_trained) || 0;
     });
-    const provinceData = Object.values(byProv).sort((a,b) => b.trained - a.trained);
+    const provinceData = Object.values(byProv).sort((a,b) => provSortIdx(a.name) - provSortIdx(b.name));
 
     // By species
     const bySpecies = {};
@@ -443,7 +445,7 @@ export default function STTBreakdownReport() {
       provMap[p].trained += parseInt(r.total_trained) || 0;
       provMap[p].hdis += parseInt(r.hdis) || 0;
     });
-    return Object.values(provMap).sort((a, b) => a.province.localeCompare(b.province));
+    return Object.values(provMap).sort((a, b) => provSortIdx(a.province) - provSortIdx(b.province));
   };
 
   const exportProvinceExcel = async () => {
