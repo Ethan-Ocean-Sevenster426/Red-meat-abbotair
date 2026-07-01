@@ -2,16 +2,16 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 
 const AuthContext = createContext(null);
 
-export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(false);
-
-  useEffect(() => {
+function readSavedUser() {
+  try {
     const saved = localStorage.getItem('rmaa-current-user');
-    if (saved) {
-      setUser(JSON.parse(saved));
-    }
-  }, []);
+    return saved ? JSON.parse(saved) : null;
+  } catch { return null; }
+}
+
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(readSavedUser);
+  const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
     if (user) {
