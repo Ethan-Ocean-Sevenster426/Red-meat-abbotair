@@ -49,7 +49,7 @@ export default function FeeStructure() {
   const [showAdd, setShowAdd]     = useState(false);
   const [adding, setAdding]       = useState(false);
   const [addError, setAddError]   = useState('');
-  const [newEntry, setNewEntry]   = useState({ category: '', description: '', days: '', rmaa_members: '', non_members: '', sort_order: '' });
+  const [newEntry, setNewEntry]   = useState({ category: '', description: '', days: '', rmaa_members: '', non_members: '', day_fee: false, sort_order: '' });
 
   const loadRows = async () => {
     setLoading(true);
@@ -113,7 +113,7 @@ export default function FeeStructure() {
       const res = await fetch('/api/fee-structure', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!res.ok) throw new Error((await res.json()).message);
       setShowAdd(false);
-      setNewEntry({ category: '', description: '', days: '', rmaa_members: '', non_members: '', sort_order: '' });
+      setNewEntry({ category: '', description: '', days: '', rmaa_members: '', non_members: '', day_fee: false, sort_order: '' });
       loadRows();
     } catch (e) { setAddError(e.message); }
     setAdding(false);
@@ -128,6 +128,7 @@ export default function FeeStructure() {
         { key: 'days', label: 'Days' },
         { key: 'rmaa_members', label: 'RMAA Members' },
         { key: 'non_members', label: 'Non-Members' },
+        { key: 'day_fee', label: 'Day Fee' },
       ];
       await exportStyledExcel({ columns: cols, rows, sheetName: 'Fee Structure', fileName: 'Fee_Structure.xlsx' });
     } catch (e) { alert('Export failed: ' + e.message); }
@@ -180,7 +181,7 @@ export default function FeeStructure() {
               <tbody key={category}>
                 {/* Category header row */}
                 <tr>
-                  <td colSpan={5} style={s.catHeader}>
+                  <td colSpan={6} style={s.catHeader}>
                     <span style={s.catTitle}>{category}</span>
                   </td>
                 </tr>
@@ -190,6 +191,7 @@ export default function FeeStructure() {
                   <th style={{ ...s.colHead, width: 100, textAlign: 'center' }}>Duration</th>
                   <th style={{ ...s.colHead, width: 130, textAlign: 'right' }}>RMAA Members</th>
                   <th style={{ ...s.colHead, width: 130, textAlign: 'right' }}>Non-Members</th>
+                  <th style={{ ...s.colHead, width: 70, textAlign: 'center' }}>Day Fee</th>
                   <th style={{ ...s.colHead, width: 80, textAlign: 'center' }}></th>
                 </tr>
                 {/* Data rows */}
@@ -216,6 +218,11 @@ export default function FeeStructure() {
                         <input style={s.inputPrice} value={cellVal(row, 'non_members')}
                           onChange={e => editCell(row.id, 'non_members', sanitisePrice(e.target.value), row)}
                           inputMode="decimal" />
+                      </td>
+                      <td style={s.tdCenter}>
+                        <input type="checkbox" checked={cellVal(row, 'day_fee') === true || cellVal(row, 'day_fee') === 1}
+                          onChange={e => editCell(row.id, 'day_fee', e.target.checked, row)}
+                          style={{ cursor: 'pointer', width: 16, height: 16 }} />
                       </td>
                       <td style={s.tdAction}>
                         {dirty ? (
@@ -272,6 +279,10 @@ export default function FeeStructure() {
                   <label style={s.modalLabel}>Sort Order</label>
                   <input style={s.modalInput} type="number" value={newEntry.sort_order} onChange={e => setNewEntry(p => ({ ...p, sort_order: e.target.value }))} placeholder="Position" />
                 </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="checkbox" checked={newEntry.day_fee} onChange={e => setNewEntry(p => ({ ...p, day_fee: e.target.checked }))} style={{ width: 16, height: 16 }} />
+                <label style={s.modalLabel}>Day Fee (don't multiply by quantity on quotation)</label>
               </div>
               <div style={s.modalRow}>
                 <div style={s.modalField}>

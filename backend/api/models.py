@@ -511,6 +511,7 @@ class FeeStructure(AuditFieldsMixin):
     days = models.CharField(max_length=100, null=True, blank=True)
     rmaa_members = models.CharField(max_length=100, null=True, blank=True)
     non_members = models.CharField(max_length=100, null=True, blank=True)
+    day_fee = models.BooleanField(default=False)
     sort_order = models.IntegerField(default=0)
 
     class Meta:

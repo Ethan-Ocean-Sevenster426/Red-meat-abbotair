@@ -151,7 +151,7 @@ RESIDUE_HEADER_MAP = [
 ]
 
 FEE_STRUCTURE_COLS = [
-    'category', 'description', 'days', 'rmaa_members', 'non_members', 'sort_order',
+    'category', 'description', 'days', 'rmaa_members', 'non_members', 'day_fee', 'sort_order',
     'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values',
 ]
 FEE_STRUCTURE_BRACKETS = set()

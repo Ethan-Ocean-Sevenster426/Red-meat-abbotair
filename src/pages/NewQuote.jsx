@@ -207,9 +207,12 @@ export default function NewQuote() {
     setLineItems(prev => prev.filter((_, i) => i !== idx));
   };
 
+  const isSkillDayFee = (desc) => feeData.skills.find(f => f.description === desc)?.day_fee;
+  const isSlaughterDayFee = (desc) => feeData.slaughter.find(f => f.description === desc)?.day_fee;
+
   const calcTotal = (item) => {
-    const pc = (Number(item.programmeCost) || 0) * (Number(item.qty) || 1);
-    const stc = (Number(item.slaughterCost) || 0) * (Number(item.slaughterQty) || 1);
+    const pc = (Number(item.programmeCost) || 0) * (isSkillDayFee(item.skillsProgramme) ? 1 : (Number(item.qty) || 1));
+    const stc = (Number(item.slaughterCost) || 0) * (isSlaughterDayFee(item.slaughterTechnique) ? 1 : (Number(item.slaughterQty) || 1));
     const dist = (Number(item.distance) || 0) * 5.5;
     const acc = Number(item.accommodation) || 0;
     return pc + stc + dist + acc;
