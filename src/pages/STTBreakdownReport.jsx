@@ -116,7 +116,7 @@ function MultiFilter({ label, options, selected, onChange }) {
 const HEADER_BG = '#2e4b8a';
 
 const REPORT_COLS = [
-  { key: 'training_start_date', label: 'Training Date',  w: 100, fmt: true },
+  { key: 'training_date_range', label: 'Training Date',  w: 170, computed: true },
   { key: 'abattoir_name',       label: 'Abattoir Name',  w: 190 },
   { key: 'province',            label: 'Province',       w: 120 },
   { key: 'municipality',        label: 'Municipality',   w: 130 },
@@ -144,6 +144,13 @@ function fmt(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d)) return dateStr;
   return d.toLocaleDateString('en-ZA', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+function fmtDateRange(row) {
+  const s = fmt(row.training_start_date);
+  const e = fmt(row.training_end_date);
+  if (!s) return e || '';
+  if (!e || e === s) return s;
+  return `${s} - ${e}`;
 }
 
 function sum(rows, key) {
@@ -240,7 +247,8 @@ export default function STTBreakdownReport() {
   const sortedRows = [...rows].sort((a, b) => {
     if (!sortCol) return 0;
     const col = REPORT_COLS.find(c => c.key === sortCol);
-    let av = a[sortCol], bv = b[sortCol];
+    const field = sortCol === 'training_date_range' ? 'training_start_date' : sortCol;
+    let av = a[field], bv = b[field];
     if (col?.num) { av = parseInt(av) || 0; bv = parseInt(bv) || 0; }
     else { av = (av || '').toString().toLowerCase(); bv = (bv || '').toString().toLowerCase(); }
     if (av < bv) return sortDir === 'asc' ? -1 : 1;
@@ -374,7 +382,7 @@ export default function STTBreakdownReport() {
     // Data rows
     const dataRows = sortedRows.length ? sortedRows : rows;
     dataRows.forEach((row, i) => {
-      const vals = REPORT_COLS.map(c => c.fmt ? fmt(row[c.key]) : c.num ? (parseInt(row[c.key]) || 0) : c.key === 'province' ? provLabel(row[c.key]) : (row[c.key] || ''));
+      const vals = REPORT_COLS.map(c => c.computed ? fmtDateRange(row) : c.num ? (parseInt(row[c.key]) || 0) : c.key === 'province' ? provLabel(row[c.key]) : (row[c.key] || ''));
       const r = ws.addRow(vals);
       const stripe = i % 2 === 0 ? 'FFFFFFFF' : 'FFF7F8FA';
       r.eachCell((cell, ci) => {
@@ -889,8 +897,8 @@ export default function STTBreakdownReport() {
                 {sortedRows.map((row, i) => (
                   <tr key={i} style={{ background: i % 2 === 0 ? '#ffffff' : '#f7f8fa' }}>
                     {REPORT_COLS.map(col => {
-                      const val = col.fmt ? fmt(row[col.key]) : col.num ? (parseInt(row[col.key]) || 0) : col.key === 'province' ? provLabel(row[col.key]) : (row[col.key] || '');
-                      const extra = col.key === 'training_start_date' ? { fontWeight: 600, color: HEADER_BG }
+                      const val = col.computed ? fmtDateRange(row) : col.num ? (parseInt(row[col.key]) || 0) : col.key === 'province' ? provLabel(row[col.key]) : (row[col.key] || '');
+                      const extra = col.key === 'training_date_range' ? { fontWeight: 600, color: HEADER_BG }
                         : col.key === 'abattoir_name' ? { fontWeight: 600 }
                         : col.key === 'total_trained' ? { fontWeight: 600 }
                         : col.key === 'municipality' ? { color: '#444' } : {};
