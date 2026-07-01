@@ -1405,9 +1405,12 @@ def quotation_generate_view(request):
                 d = datetime.fromisoformat(item.get('date')) if item.get('date') else None
                 d_end = datetime.fromisoformat(item.get('endDate')) if item.get('endDate') else None
                 if d and d_end and d_end != d:
-                    cell_updates[f'B{row}'] = f"{d.strftime('%A, %B %d, %Y')} - {d_end.strftime('%A, %B %d, %Y')}"
+                    if d.month == d_end.month and d.year == d_end.year:
+                        cell_updates[f'B{row}'] = f"{d.day}-{d_end.day} {d.strftime('%b %Y')}"
+                    else:
+                        cell_updates[f'B{row}'] = f"{d.day} {d.strftime('%b %Y')} - {d_end.day} {d_end.strftime('%b %Y')}"
                 elif d:
-                    cell_updates[f'B{row}'] = d.strftime('%A, %B %d, %Y')
+                    cell_updates[f'B{row}'] = f"{d.day} {d.strftime('%b %Y')}"
                 else:
                     cell_updates[f'B{row}'] = ''
             except (ValueError, TypeError):
