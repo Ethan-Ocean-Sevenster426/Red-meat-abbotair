@@ -146,11 +146,15 @@ function fmt(dateStr) {
   return d.toLocaleDateString('en-ZA', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 function fmtDateRange(row) {
-  const s = fmt(row.training_start_date);
-  const e = fmt(row.training_end_date);
-  if (!s) return e || '';
-  if (!e || e === s) return s;
-  return `${s} - ${e}`;
+  if (!row.training_start_date) return fmt(row.training_end_date) || '';
+  const ds = new Date(row.training_start_date);
+  if (isNaN(ds)) return row.training_start_date;
+  const start = fmt(row.training_start_date);
+  if (!row.training_end_date) return start;
+  const de = new Date(row.training_end_date);
+  if (isNaN(de) || ds.getTime() === de.getTime()) return start;
+  const endDay = String(de.getDate()).padStart(2, '0');
+  return `${start} - ${endDay}`;
 }
 
 function sum(rows, key) {
