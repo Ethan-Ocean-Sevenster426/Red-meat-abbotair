@@ -1390,6 +1390,12 @@ def quotation_generate_view(request):
             'D16': data.get('rmaaContact') or '',
         }
 
+        # Look up day_fee flags from FeeStructure
+        day_fee_set = set()
+        with connection.cursor() as cur:
+            cur.execute('SELECT description FROM FeeStructure WHERE day_fee = 1')
+            day_fee_set = {r[0] for r in cur.fetchall()}
+
         # Line items (rows 22-26, up to 5)
         for i, item in enumerate(data.get('lineItems') or []):
             row = 22 + i
@@ -1397,20 +1403,26 @@ def quotation_generate_view(request):
                 break
             try:
                 d = datetime.fromisoformat(item.get('date')) if item.get('date') else None
-                cell_updates[f'B{row}'] = d.strftime('%A, %B %d, %Y') if d else ''
+                d_end = datetime.fromisoformat(item.get('endDate')) if item.get('endDate') else None
+                if d and d_end and d_end != d:
+                    cell_updates[f'B{row}'] = f"{d.strftime('%A, %B %d, %Y')} - {d_end.strftime('%A, %B %d, %Y')}"
+                elif d:
+                    cell_updates[f'B{row}'] = d.strftime('%A, %B %d, %Y')
+                else:
+                    cell_updates[f'B{row}'] = ''
             except (ValueError, TypeError):
                 cell_updates[f'B{row}'] = item.get('date') or ''
             skill = item.get('skillsProgramme') or ''
             qty = item.get('qty') or ''
             cell_updates[f'C{row}'] = f"{skill} x {qty}" if skill and qty else skill
             pc = safe_float(item.get('programmeCost'))
-            pq = int(item.get('qty') or 1) if item.get('qty') else 1
+            pq = 1 if skill in day_fee_set else (int(item.get('qty') or 1) if item.get('qty') else 1)
             cell_updates[f'D{row}'] = pc * pq if pc is not None else ''
             slaught = item.get('slaughterTechnique') or ''
             sq = item.get('slaughterQty') or ''
             cell_updates[f'E{row}'] = f"{slaught} x {sq}" if slaught and sq else slaught
             sc = safe_float(item.get('slaughterCost'))
-            sqn = int(item.get('slaughterQty') or 1) if item.get('slaughterQty') else 1
+            sqn = 1 if slaught in day_fee_set else (int(item.get('slaughterQty') or 1) if item.get('slaughterQty') else 1)
             cell_updates[f'F{row}'] = sc * sqn if sc is not None else ''
             cell_updates[f'G{row}'] = safe_float(item.get('distance')) or ''
             cell_updates[f'H{row}'] = safe_float(item.get('accommodation')) or ''

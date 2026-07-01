@@ -52,7 +52,7 @@ export default function NewQuote() {
   const [streetAddress, setStreetAddress] = useState('');
   const [rmaaContact, setRmaaContact]     = useState('');
   const [lineItems, setLineItems]         = useState([
-    { date: '', skillsProgramme: '', qty: '1', programmeCost: '', slaughterTechnique: '', slaughterQty: '1', slaughterCost: '', distance: '', accommodation: '' },
+    { date: '', endDate: '', skillsProgramme: '', qty: '1', programmeCost: '', slaughterTechnique: '', slaughterQty: '1', slaughterCost: '', distance: '', accommodation: '' },
   ]);
 
   // Sampling & Audit
@@ -199,7 +199,7 @@ export default function NewQuote() {
 
   const addLineItem = () => {
     if (lineItems.length >= 5) return;
-    setLineItems(prev => [...prev, { date: '', skillsProgramme: '', qty: '1', programmeCost: '', slaughterTechnique: '', slaughterQty: '1', slaughterCost: '', distance: '', accommodation: '' }]);
+    setLineItems(prev => [...prev, { date: '', endDate: '', skillsProgramme: '', qty: '1', programmeCost: '', slaughterTechnique: '', slaughterQty: '1', slaughterCost: '', distance: '', accommodation: '' }]);
   };
 
   const removeLineItem = (idx) => {
@@ -298,7 +298,7 @@ export default function NewQuote() {
     setClientName(''); setProvince(''); setRmaaMember(''); setRc(''); setThroughput('');
     setVatNumber(''); setClientContact(''); setTelephone(''); setCell(''); setEmail('');
     setPostalAddress(''); setStreetAddress(''); setRmaaContact('');
-    setLineItems([{ date: '', skillsProgramme: '', qty: '1', programmeCost: '', slaughterTechnique: '', slaughterQty: '1', slaughterCost: '', distance: '', accommodation: '' }]);
+    setLineItems([{ date: '', endDate: '', skillsProgramme: '', qty: '1', programmeCost: '', slaughterTechnique: '', slaughterQty: '1', slaughterCost: '', distance: '', accommodation: '' }]);
     setSampling({ qty: '', cost: '', distance: '', accommodation: '' });
     setAudit({ qty: '', cost: '', distance: '', accommodation: '' });
     setDiscounts({ skillsAmount: '', skillsKm: '', skillsAccomm: '', samplingAmount: '', samplingKm: '', samplingAccomm: '', auditAmount: '', auditKm: '', auditAccomm: '', membershipAmount: '', membershipKm: '', membershipAccomm: '' });
@@ -500,7 +500,8 @@ export default function NewQuote() {
                     <thead>
                       <tr>
                         <th style={s.th}>#</th>
-                        <th style={s.th}>Date</th>
+                        <th style={s.th}>Start Date</th>
+                        <th style={s.th}>End Date</th>
                         <th style={s.th}>Skills Programme</th>
                         <th style={{ ...s.th, width: 45 }}>Qty</th>
                         <th style={{ ...s.th, width: 100 }}>Cost (R)</th>
@@ -518,6 +519,7 @@ export default function NewQuote() {
                         <tr key={i}>
                           <td style={s.td}>{i + 1}</td>
                           <td style={s.td}><input type="date" value={item.date} onChange={e => updateLineItem(i, 'date', e.target.value)} style={s.cellInput} /></td>
+                          <td style={s.td}><input type="date" value={item.endDate} onChange={e => updateLineItem(i, 'endDate', e.target.value)} style={s.cellInput} /></td>
                           <td style={s.td}>
                             <select value={item.skillsProgramme} onChange={e => updateLineItem(i, 'skillsProgramme', e.target.value)} style={s.cellInput}>
                               <option value="">-- Select --</option>
