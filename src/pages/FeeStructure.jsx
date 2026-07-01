@@ -221,7 +221,14 @@ export default function FeeStructure() {
                       </td>
                       <td style={s.tdCenter}>
                         <input type="checkbox" checked={cellVal(row, 'day_fee') === true || cellVal(row, 'day_fee') === 1}
-                          onChange={e => editCell(row.id, 'day_fee', e.target.checked, row)}
+                          onChange={e => {
+                            const val = e.target.checked;
+                            const merged = { ...row, day_fee: val, modified_by: user?.displayName || user?.username || 'Unknown', modified_time: new Date().toLocaleString('en-ZA'), modified_fields: 'day_fee', old_values: `day_fee: ${row.day_fee ?? ''}`, new_values: `day_fee: ${val}` };
+                            setRows(prev => prev.map(r => r.id === row.id ? { ...r, day_fee: val } : r));
+                            fetch(`/api/fee-structure/${row.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(merged) })
+                              .then(r => { if (!r.ok) throw new Error('Save failed'); })
+                              .catch(() => { setRows(prev => prev.map(r => r.id === row.id ? { ...r, day_fee: row.day_fee } : r)); alert('Failed to save Day Fee'); });
+                          }}
                           style={{ cursor: 'pointer', width: 16, height: 16 }} />
                       </td>
                       <td style={s.tdAction}>
