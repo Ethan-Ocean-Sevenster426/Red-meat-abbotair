@@ -225,12 +225,18 @@ def _list(request, model, columns, bracket_cols, reserved):
     return Response({'total': total, 'page': page, 'pageSize': page_size, 'rows': rows})
 
 
+def _coerce_val(v):
+    if isinstance(v, bool):
+        return '1' if v else '0'
+    return str(v if v is not None and v != '' else '')
+
+
 def _create(request, model, columns, bracket_cols, audit_table=None):
     row = request.data or {}
     tbl = model._meta.db_table
     col_refs = [safe_col_ref(c, bracket_cols) for c in columns]
     placeholders = ['%s'] * len(columns)
-    values = [str(row.get(c, '') or '') for c in columns]
+    values = [_coerce_val(row.get(c, '')) for c in columns]
     sql = f'INSERT INTO {tbl} ({",".join(col_refs)}) VALUES ({",".join(placeholders)})'
     with connection.cursor() as c:
         c.execute(sql, values)
@@ -256,7 +262,7 @@ def _update(request, model, columns, bracket_cols, pk, audit_table):
     row = request.data or {}
     tbl = model._meta.db_table
     sets = ', '.join(f'{safe_col_ref(c, bracket_cols)} = %s' for c in columns)
-    values = [str(row.get(c, '') or '') for c in columns] + [pk]
+    values = [_coerce_val(row.get(c, '')) for c in columns] + [pk]
     with connection.cursor() as c:
         c.execute(f'UPDATE {tbl} SET {sets} WHERE id = %s', values)
     append_audit_log(audit_table, pk, row)
