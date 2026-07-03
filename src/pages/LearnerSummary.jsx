@@ -7,21 +7,22 @@ import AuditLogModal from '../components/AuditLogModal.jsx';
 import { deriveDobAge } from '../utils/saId.js';
 
 const COLUMNS = [
-  { key: 'id',             label: 'ID',              w: 50,  readonly: true },
-  { key: 'surname',        label: 'Surname',         w: 140 },
-  { key: 'name',           label: 'Name',            w: 130 },
-  { key: 'id_number',      label: 'ID Number',       w: 150 },
+  { key: 'surname',        label: 'Surname',         w: 140, readonly: true },
+  { key: 'name',           label: 'Name',            w: 130, readonly: true },
+  { key: 'id_number',      label: 'ID Number',       w: 150, readonly: true },
+  { key: 'training',       label: 'Training',        w: 280, readonly: true },
+  { key: 'species',        label: 'Species',         w: 120, readonly: true },
+  { key: 'province',       label: 'Province',        w: 140, readonly: true },
+  { key: 'municipality',   label: 'Municipality',    w: 160, readonly: true },
+  { key: 'abattoirs',      label: 'Abattoir',        w: 220, readonly: true },
   { key: 'year_of_birth',  label: 'Date Of Birth',   w: 110, readonly: true },
   { key: 'age',            label: 'Age',             w: 60,  readonly: true },
-  { key: 'citizen',        label: 'Citizen',         w: 100 },
-  { key: 'race_gender',    label: 'Race & Gender',   w: 120 },
-  { key: 'work_stations',  label: 'Work Stations',   w: 280 },
-  { key: 'modified_by',    label: 'Modified By',     w: 130, readonly: true },
-  { key: 'modified_time',  label: 'Modified Time',   w: 140, readonly: true },
+  { key: 'citizen',        label: 'Citizen',         w: 100, readonly: true },
+  { key: 'race_gender',    label: 'Race & Gender',   w: 120, readonly: true },
 ];
 
-const WRAP_COLS = new Set(['work_stations']);
-const MODAL_EXCLUDE = new Set(['year_of_birth', 'age', 'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values']);
+const WRAP_COLS = new Set(['training', 'abattoirs']);
+const MODAL_EXCLUDE = new Set(['year_of_birth', 'age', 'training', 'species', 'province', 'municipality', 'abattoirs']);
 const PAGE_SIZE = 50;
 
 export default function LearnerSummary() {
@@ -304,7 +305,7 @@ export default function LearnerSummary() {
                       <div style={{ ...s.thLabel, cursor: 'pointer', userSelect: 'none' }} onClick={() => handleSort(col.key)}>
                         {col.label}{isSorted && <span style={{ marginLeft: 3, fontSize: '0.55rem', opacity: 0.85 }}>{sortDir === 'asc' ? '▲' : '▼'}</span>}
                       </div>
-                      {!col.readonly && <ColFilterDropdown col={col} value={colFilters[col.key] || ''} onChange={val => handleColFilter(col.key, val)} />}
+                      <ColFilterDropdown col={col} value={colFilters[col.key] || ''} onChange={val => handleColFilter(col.key, val)} />
                     </th>
                   );
                 })}

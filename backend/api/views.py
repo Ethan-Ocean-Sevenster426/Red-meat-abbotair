@@ -658,7 +658,7 @@ def stt_list_create_view(request):
 
 @api_view(['GET', 'POST'])
 def learner_list_create_view(request):
-    """Custom list for Learners with _idCheck support."""
+    """Custom list for Learners — aggregated from STTTrainingReport."""
     if request.method == 'POST':
         return learner_views['list_create'](request._request)
 
@@ -671,17 +671,38 @@ def learner_list_create_view(request):
 
     vendor = connection.vendor
     length_fn = 'LENGTH' if vendor == 'sqlite' else 'CHAR_LENGTH'
+    sep = "', '" if vendor == 'sqlite' else "SEPARATOR ', '"
+    gc = lambda col: f"GROUP_CONCAT(DISTINCT {col})" if vendor == 'sqlite' else f"GROUP_CONCAT(DISTINCT {col} {sep})"
+
+    where_parts = []
+    params = []
     reserved = {'page', 'size', 'sortCol', 'sortDir', '_idCheck'}
-    where_parts, params = apply_column_filters(
-        request.query_params.dict(), LEARNER_COLS, LEARNER_BRACKETS, reserved,
-    )
+    filterable = {'name', 'surname', 'id_number', 'year_of_birth', 'age',
+                  'citizen', 'race_gender', 'training', 'species',
+                  'province', 'municipality', 'abattoirs'}
+    for key, val in request.query_params.dict().items():
+        if key in reserved or key not in filterable:
+            continue
+        v = (val or '').strip()
+        if not v:
+            continue
+        col_map = {
+            'training': 'work_station', 'species': 'specie',
+            'abattoirs': 'abattoir_name',
+        }
+        db_col = col_map.get(key, key)
+        if v == '__blank__':
+            where_parts.append(f"({db_col} = '' OR {db_col} IS NULL)")
+        else:
+            where_parts.append(f"{db_col} LIKE %s")
+            params.append(f'%{v}%')
 
     id_check = request.query_params.get('_idCheck') or ''
     if id_check == 'duplicate':
         where_parts.append(
-            "id_number IN (SELECT id_number FROM Learners "
+            "id_number IN (SELECT id_number FROM STTTrainingReport "
             "WHERE id_number IS NOT NULL AND id_number <> '' "
-            "GROUP BY id_number HAVING COUNT(*) > 1)"
+            "GROUP BY id_number HAVING COUNT(DISTINCT CONCAT(name, surname)) > 1)"
         )
     elif id_check == 'incorrect':
         where_parts.append(
@@ -693,19 +714,52 @@ def learner_list_create_view(request):
     where_sql = ('WHERE ' + ' AND '.join(where_parts)) if where_parts else ''
 
     sort_col_raw = request.query_params.get('sortCol') or ''
-    sort_col = sort_col_raw if sort_col_raw in LEARNER_COLS else 'id'
+    valid_sort = {'name', 'surname', 'id_number', 'year_of_birth', 'age',
+                  'citizen', 'race_gender', 'training', 'species',
+                  'province', 'municipality', 'abattoirs'}
+    sort_col = sort_col_raw if sort_col_raw in valid_sort else 'surname'
     sort_dir = 'DESC' if request.query_params.get('sortDir') == 'desc' else 'ASC'
 
+    inner_sql = f"""
+        SELECT
+          name, surname, id_number,
+          MAX(year_of_birth) AS year_of_birth,
+          MAX(age) AS age,
+          MAX(citizen) AS citizen,
+          MAX(race_gender) AS race_gender,
+          {gc('work_station')} AS training,
+          {gc('specie')} AS species,
+          {gc('province')} AS province,
+          {gc('municipality')} AS municipality,
+          {gc('abattoir_name')} AS abattoirs
+        FROM STTTrainingReport
+        {where_sql}
+        GROUP BY name, surname, id_number
+    """
+
     with connection.cursor() as c:
-        c.execute(f'SELECT COUNT(*) FROM Learners {where_sql}', params)
+        c.execute(f"SELECT COUNT(*) FROM ({inner_sql}) AS sub", params)
         total = c.fetchone()[0]
         c.execute(
-            f'SELECT * FROM Learners {where_sql} ORDER BY {sort_col} {sort_dir} '
-            f'LIMIT %s OFFSET %s',
+            f"SELECT * FROM ({inner_sql}) AS sub ORDER BY {sort_col} {sort_dir} "
+            f"LIMIT %s OFFSET %s",
             params + [page_size, offset],
         )
         rows = rows_to_dicts(c)
     return Response({'total': total, 'page': page, 'pageSize': page_size, 'rows': rows})
+
+
+@api_view(['GET'])
+def learner_count_view(request):
+    with connection.cursor() as c:
+        c.execute(
+            "SELECT COUNT(*) FROM ("
+            "  SELECT name, surname, id_number FROM STTTrainingReport"
+            "  GROUP BY name, surname, id_number"
+            ") AS sub"
+        )
+        n = c.fetchone()[0]
+    return Response({'count': n})
 
 
 @api_view(['POST'])

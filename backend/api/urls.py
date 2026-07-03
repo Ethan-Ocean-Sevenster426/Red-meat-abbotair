@@ -102,7 +102,7 @@ urlpatterns = [
 
     # learners
     path('learners', v.learner_list_create_view),
-    path('learners/count', v.learner_views['count']),
+    path('learners/count', v.learner_count_view),
     path('learners/merge', v.learner_merge_view),
     path('learners/<int:pk>', v.learner_views['retrieve_update_delete']),
     path('learners/<int:pk>/history', v.learner_views['history']),
