@@ -762,6 +762,30 @@ def learner_count_view(request):
     return Response({'count': n})
 
 
+@api_view(['GET'])
+def learner_filter_values_view(request):
+    """Return distinct values for each filterable column in STTTrainingReport."""
+    cols = {
+        'province': 'province',
+        'municipality': 'municipality',
+        'species': 'specie',
+        'abattoirs': 'abattoir_name',
+        'training': 'work_station',
+        'citizen': 'citizen',
+        'race_gender': 'race_gender',
+    }
+    result = {}
+    with connection.cursor() as c:
+        for key, db_col in cols.items():
+            c.execute(
+                f"SELECT DISTINCT {db_col} FROM STTTrainingReport "
+                f"WHERE {db_col} IS NOT NULL AND {db_col} <> '' "
+                f"ORDER BY {db_col}"
+            )
+            result[key] = [row[0] for row in c.fetchall()]
+    return Response(result)
+
+
 @api_view(['POST'])
 def learner_merge_view(request):
     """Merge two learners: keep primary, combine work_stations, delete secondary."""

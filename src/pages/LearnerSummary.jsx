@@ -53,6 +53,7 @@ export default function LearnerSummary() {
   const [selected, setSelected]     = useState(new Set());
   const [merging, setMerging]       = useState(false);
   const [showMergeModal, setShowMergeModal] = useState(false);
+  const [filterOpts, setFilterOpts] = useState({});
 
   const handleLogout = () => { logout(); navigate('/login', { replace: true }); };
 
@@ -75,6 +76,9 @@ export default function LearnerSummary() {
   useEffect(() => { loadRows(page, appliedFilters); }, [page, appliedFilters, sortCol, sortDir, idCheck]);
   useEffect(() => { fetch('/api/learners/count').then(r => r.json()).then(d => setDbCount(d.count)).catch(() => {}); }, []);
   useEffect(() => {
+    fetch('/api/learners/filter-values').then(r => r.json()).then(d => setFilterOpts(d)).catch(() => {});
+  }, []);
+  useEffect(() => {
     if (!user?.id) return;
     fetch(`/api/user-prefs?page=LearnerSummary&userId=${user.id}`)
       .then(r => r.json()).then(d => { setHiddenCols(new Set(d.hiddenColumns || [])); if (d.columnOrder?.length) setColOrder(d.columnOrder); }).catch(() => {});
@@ -92,9 +96,10 @@ export default function LearnerSummary() {
   const toggleCol = (key) => { setHiddenCols(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); savePrefs(next, colOrder); return next; }); };
   const reorderCols = (orderedKeys) => { setColOrder(orderedKeys); savePrefs(hiddenCols, orderedKeys); };
 
+  const columnsWithOpts = COLUMNS.map(c => filterOpts[c.key] ? { ...c, opts: filterOpts[c.key] } : c);
   const orderedColumns = colOrder.length > 0
-    ? [...colOrder.map(k => COLUMNS.find(c => c.key === k)).filter(Boolean), ...COLUMNS.filter(c => !colOrder.includes(c.key))]
-    : COLUMNS;
+    ? [...colOrder.map(k => columnsWithOpts.find(c => c.key === k)).filter(Boolean), ...columnsWithOpts.filter(c => !colOrder.includes(c.key))]
+    : columnsWithOpts;
 
   const handleColFilter = (key, val) => {
     setColFilters(prev => ({ ...prev, [key]: val }));
