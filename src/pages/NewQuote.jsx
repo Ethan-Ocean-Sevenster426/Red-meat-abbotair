@@ -696,6 +696,17 @@ export default function NewQuote() {
                     Download PDF
                   </button>
                 )}
+                {pdfData?.xlsxBase64 && (
+                  <button onClick={() => {
+                    const blob = new Blob([Uint8Array.from(atob(pdfData.xlsxBase64), c => c.charCodeAt(0))], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = pdfData.fileName.replace('.pdf', '.xlsx'); a.click();
+                    URL.revokeObjectURL(url);
+                  }} style={s.btnOutline}>
+                    Download Excel
+                  </button>
+                )}
                 <button onClick={handleSend} style={s.btnPrimary} disabled={sending}>
                   {sending ? 'Sending...' : `Send to ${email}`}
                 </button>
