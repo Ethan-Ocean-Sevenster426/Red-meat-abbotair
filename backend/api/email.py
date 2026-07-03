@@ -59,12 +59,13 @@ def _graph_post(path: str, json_body: dict, token: str, extra_headers: dict | No
     )
 
 
-def modify_xlsx_cells(xlsx_bytes: bytes, cell_updates: dict) -> bytes:
+def modify_xlsx_cells(xlsx_bytes: bytes, cell_updates: dict, hidden_rows: list = None) -> bytes:
     """Apply cell value updates to an xlsx via direct XML edits.
 
     Preserves all embedded assets (images, drawings, page setup, formatting,
     formulas in untouched cells) — unlike openpyxl which strips drawings on
     save. cell_updates is a dict of cell_ref -> value (str/int/float/None).
+    hidden_rows is an optional list of row numbers to hide.
     """
     import zipfile
     import re
@@ -74,13 +75,14 @@ def modify_xlsx_cells(xlsx_bytes: bytes, cell_updates: dict) -> bytes:
     with zipfile.ZipFile(BytesIO(xlsx_bytes), 'r') as src:
         with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as dst:
             for item in src.namelist():
-                # Drop cached calc chain so LibreOffice/Excel recalculates formulas
                 if item == 'xl/calcChain.xml':
                     continue
                 content = src.read(item)
                 if item == 'xl/worksheets/sheet1.xml':
                     xml = _apply_cell_updates(content.decode('utf-8'), cell_updates)
                     xml = _strip_formula_cache(xml)
+                    if hidden_rows:
+                        xml = _hide_rows(xml, hidden_rows)
                     content = xml.encode('utf-8')
                 elif item == 'xl/workbook.xml':
                     content = _force_recalc(content.decode('utf-8')).encode('utf-8')
@@ -91,6 +93,19 @@ def modify_xlsx_cells(xlsx_bytes: bytes, cell_updates: dict) -> bytes:
                     ).encode('utf-8')
                 dst.writestr(item, content)
     return out.getvalue()
+
+
+def _hide_rows(xml: str, rows: list) -> str:
+    import re
+    row_set = set(rows)
+    def add_hidden(m):
+        row_num = int(m.group(1))
+        if row_num in row_set:
+            tag = m.group(0)
+            if 'hidden="1"' not in tag:
+                return tag.replace(f'r="{row_num}"', f'r="{row_num}" hidden="1"')
+        return m.group(0)
+    return re.sub(r'<row\s[^>]*r="(\d+)"[^>]*>', add_hidden, xml)
 
 
 def _strip_formula_cache(xml: str) -> str:

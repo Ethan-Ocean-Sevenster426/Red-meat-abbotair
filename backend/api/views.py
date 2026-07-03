@@ -1433,8 +1433,9 @@ def quotation_generate_view(request):
             cell_updates[f'H{row}'] = safe_float(item.get('accommodation')) or ''
             used_rows = i + 1
 
-        # Clear unused line item rows so they don't show R0.00
-        for row in range(22 + used_rows, 34):
+        # Clear and hide unused line item rows
+        unused_line_rows = list(range(22 + used_rows, 34))
+        for row in unused_line_rows:
             for col in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'):
                 cell_updates[f'{col}{row}'] = ''
 
@@ -1477,7 +1478,7 @@ def quotation_generate_view(request):
                     cell_updates[f'G{row}'] = -abs(km) if km is not None else ''
                     cell_updates[f'H{row}'] = -abs(acc) if acc is not None else ''
 
-        xlsx_bytes = email_svc.modify_xlsx_cells(template_bytes, cell_updates)
+        xlsx_bytes = email_svc.modify_xlsx_cells(template_bytes, cell_updates, hidden_rows=unused_line_rows)
         pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$52', setup_page=True)
         folder = f"Quotation {date_str.replace('/', '-')} {sanitize_fs_name(data.get('clientName'))}"
 
