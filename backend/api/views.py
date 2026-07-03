@@ -1397,7 +1397,9 @@ def quotation_generate_view(request):
             day_fee_set = {r[0] for r in cur.fetchall()}
 
         # Line items (rows 22-33, up to 12)
-        for i, item in enumerate(data.get('lineItems') or []):
+        line_items = data.get('lineItems') or []
+        used_rows = 0
+        for i, item in enumerate(line_items):
             row = 22 + i
             if row > 33:
                 break
@@ -1429,6 +1431,12 @@ def quotation_generate_view(request):
             cell_updates[f'F{row}'] = sc * sqn if sc is not None else ''
             cell_updates[f'G{row}'] = safe_float(item.get('distance')) or ''
             cell_updates[f'H{row}'] = safe_float(item.get('accommodation')) or ''
+            used_rows = i + 1
+
+        # Clear unused line item rows so they don't show R0.00
+        for row in range(22 + used_rows, 34):
+            for col in ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'):
+                cell_updates[f'{col}{row}'] = ''
 
         # Sampling (row 36)
         samp = data.get('sampling') or {}
