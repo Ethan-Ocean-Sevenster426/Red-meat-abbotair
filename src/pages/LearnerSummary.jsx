@@ -299,8 +299,8 @@ export default function LearnerSummary() {
           <table style={s.table}>
             <thead>
               <tr>
-                <th style={{ ...s.th, width: 30, minWidth: 30, maxWidth: 30, textAlign: 'center', background: '#0078d4', zIndex: 6 }}><div style={s.thLabel}></div></th>
-                <th style={{ ...s.th, ...s.stickyAct, left: 30, background: '#0078d4', zIndex: 6 }}><div style={s.thLabel}>Actions</div></th>
+                <th style={{ ...s.th, width: 30, minWidth: 30, maxWidth: 30, textAlign: 'center', background: '#0078d4' }}><div style={s.thLabel}></div></th>
+                <th style={{ ...s.th, minWidth: 130, maxWidth: 130, background: '#0078d4' }}><div style={s.thLabel}>Actions</div></th>
                 {orderedColumns.map(col => {
                   if (hiddenCols.has(col.key)) return null;
                   const hasFilter = !!(colFilters[col.key] || '').trim();
@@ -333,7 +333,7 @@ export default function LearnerSummary() {
                       <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(row.id)}
                         style={{ width: 14, height: 14, cursor: 'pointer', margin: 0, accentColor: '#0078d4' }} title="Select for merge" />
                     </td>
-                    <td style={{ ...s.td, ...s.stickyAct, left: 30, background: isSelected ? '#e8f0fe' : dirty ? '#e8f4fd' : ri % 2 === 0 ? '#ffffff' : '#f3f2f1', textAlign: 'center', padding: '2px 4px' }}>
+                    <td style={{ ...s.td, minWidth: 130, maxWidth: 130, background: isSelected ? '#e8f0fe' : dirty ? '#e8f4fd' : ri % 2 === 0 ? '#ffffff' : '#f3f2f1', textAlign: 'center', padding: '2px 4px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                         {dirty ? (
                           <>
