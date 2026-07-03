@@ -1396,10 +1396,10 @@ def quotation_generate_view(request):
             cur.execute('SELECT description FROM FeeStructure WHERE day_fee = 1')
             day_fee_set = {r[0] for r in cur.fetchall()}
 
-        # Line items (rows 22-26, up to 5)
+        # Line items (rows 22-33, up to 12)
         for i, item in enumerate(data.get('lineItems') or []):
             row = 22 + i
-            if row > 26:
+            if row > 33:
                 break
             try:
                 d = datetime.fromisoformat(item.get('date')) if item.get('date') else None
@@ -1430,34 +1430,34 @@ def quotation_generate_view(request):
             cell_updates[f'G{row}'] = safe_float(item.get('distance')) or ''
             cell_updates[f'H{row}'] = safe_float(item.get('accommodation')) or ''
 
-        # Sampling (row 29)
+        # Sampling (row 36)
         samp = data.get('sampling') or {}
         samp_qty = samp.get('qty') or ''
         samp_cost = safe_float(samp.get('cost'))
         if samp_qty:
-            cell_updates['B29'] = f"Sampling x {samp_qty}"
-            cell_updates['F29'] = samp_cost * int(samp_qty) if samp_cost is not None else ''
-            cell_updates['G29'] = safe_float(samp.get('distance')) or ''
-            cell_updates['H29'] = safe_float(samp.get('accommodation')) or ''
+            cell_updates['B36'] = f"Sampling x {samp_qty}"
+            cell_updates['F36'] = samp_cost * int(samp_qty) if samp_cost is not None else ''
+            cell_updates['G36'] = safe_float(samp.get('distance')) or ''
+            cell_updates['H36'] = safe_float(samp.get('accommodation')) or ''
 
-        # Audit Verification (row 30)
+        # Audit Verification (row 37)
         aud = data.get('audit') or {}
         aud_qty = aud.get('qty') or ''
         aud_cost = safe_float(aud.get('cost'))
         if aud_qty:
-            cell_updates['B30'] = f"Audit Verification x {aud_qty}"
-            cell_updates['F30'] = aud_cost * int(aud_qty) if aud_cost is not None else ''
-            cell_updates['G30'] = safe_float(aud.get('distance')) or ''
-            cell_updates['H30'] = safe_float(aud.get('accommodation')) or ''
+            cell_updates['B37'] = f"Audit Verification x {aud_qty}"
+            cell_updates['F37'] = aud_cost * int(aud_qty) if aud_cost is not None else ''
+            cell_updates['G37'] = safe_float(aud.get('distance')) or ''
+            cell_updates['H37'] = safe_float(aud.get('accommodation')) or ''
 
-        # Discount lines (rows 34-37)
+        # Discount lines (rows 41-44)
         disc = data.get('discounts')
         if disc:
             disc_rows = [
-                (34, 'Skills Programme', 'skillsAmount', 'skillsKm', 'skillsAccomm'),
-                (35, 'Sampling', 'samplingAmount', 'samplingKm', 'samplingAccomm'),
-                (36, 'Audit Verification', 'auditAmount', 'auditKm', 'auditAccomm'),
-                (37, 'Membership', 'membershipAmount', 'membershipKm', 'membershipAccomm'),
+                (41, 'Skills Programme', 'skillsAmount', 'skillsKm', 'skillsAccomm'),
+                (42, 'Sampling', 'samplingAmount', 'samplingKm', 'samplingAccomm'),
+                (43, 'Audit Verification', 'auditAmount', 'auditKm', 'auditAccomm'),
+                (44, 'Membership', 'membershipAmount', 'membershipKm', 'membershipAccomm'),
             ]
             for row, label, amt_key, km_key, acc_key in disc_rows:
                 amt = safe_float(disc.get(amt_key))
@@ -1470,7 +1470,7 @@ def quotation_generate_view(request):
                     cell_updates[f'H{row}'] = -abs(acc) if acc is not None else ''
 
         xlsx_bytes = email_svc.modify_xlsx_cells(template_bytes, cell_updates)
-        pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$45', setup_page=True)
+        pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$52', setup_page=True)
         folder = f"Quotation {date_str.replace('/', '-')} {sanitize_fs_name(data.get('clientName'))}"
 
         # Stash the PDF so the in-browser preview can be served with a real

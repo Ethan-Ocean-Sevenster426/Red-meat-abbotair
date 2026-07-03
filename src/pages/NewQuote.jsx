@@ -198,7 +198,7 @@ export default function NewQuote() {
   };
 
   const addLineItem = () => {
-    if (lineItems.length >= 5) return;
+    if (lineItems.length >= 12) return;
     setLineItems(prev => [...prev, { date: '', endDate: '', skillsProgramme: '', qty: '1', programmeCost: '', slaughterTechnique: '', slaughterQty: '1', slaughterCost: '', distance: '', accommodation: '' }]);
   };
 
@@ -567,7 +567,7 @@ export default function NewQuote() {
                       </tr>
                     </tfoot>
                   </table>
-                  {lineItems.length < 5 && (
+                  {lineItems.length < 12 && (
                     <button onClick={addLineItem} style={s.addLineBtn}>+ Add Line Item</button>
                   )}
 
