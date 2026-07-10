@@ -11,17 +11,20 @@ const COLUMNS = [
   { key: 'name',           label: 'Name',            w: 130, readonly: true },
   { key: 'id_number',      label: 'ID Number',       w: 150, readonly: true },
   { key: 'training',       label: 'Training',        w: 280, readonly: true },
+  { key: 'training_programme', label: 'Training Programme', w: 200, readonly: true },
   { key: 'species',        label: 'Species',         w: 120, readonly: true },
   { key: 'province',       label: 'Province',        w: 140, readonly: true },
   { key: 'municipality',   label: 'Municipality',    w: 160, readonly: true },
   { key: 'abattoirs',      label: 'Abattoir',        w: 220, readonly: true },
+  { key: 'contact_number', label: 'Contact Number',  w: 130, readonly: true },
   { key: 'year_of_birth',  label: 'Date Of Birth',   w: 110, readonly: true },
   { key: 'age',            label: 'Age',             w: 60,  readonly: true },
   { key: 'citizen',        label: 'Citizen',         w: 100, readonly: true },
   { key: 'race_gender',    label: 'Race & Gender',   w: 120, readonly: true },
+  { key: 'disability',     label: 'Disability',      w: 100, readonly: true },
 ];
 
-const WRAP_COLS = new Set(['training', 'abattoirs']);
+const WRAP_COLS = new Set(['training', 'abattoirs', 'training_programme']);
 const MODAL_EXCLUDE = new Set(['year_of_birth', 'age', 'training', 'species', 'province', 'municipality', 'abattoirs']);
 const PAGE_SIZE = 50;
 

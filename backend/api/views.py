@@ -679,7 +679,8 @@ def learner_list_create_view(request):
     reserved = {'page', 'size', 'sortCol', 'sortDir', '_idCheck'}
     filterable = {'name', 'surname', 'id_number', 'year_of_birth', 'age',
                   'citizen', 'race_gender', 'training', 'species',
-                  'province', 'municipality', 'abattoirs'}
+                  'province', 'municipality', 'abattoirs',
+                  'contact_number', 'disability', 'training_programme'}
     for key, val in request.query_params.dict().items():
         if key in reserved or key not in filterable:
             continue
@@ -689,6 +690,7 @@ def learner_list_create_view(request):
         col_map = {
             'training': 'work_station', 'species': 'specie',
             'abattoirs': 'abattoir_name',
+            'contact_number': 'sample_take', 'training_programme': 'report_to_client',
         }
         db_col = col_map.get(key, key)
         if v == '__blank__':
@@ -716,7 +718,8 @@ def learner_list_create_view(request):
     sort_col_raw = request.query_params.get('sortCol') or ''
     valid_sort = {'name', 'surname', 'id_number', 'year_of_birth', 'age',
                   'citizen', 'race_gender', 'training', 'species',
-                  'province', 'municipality', 'abattoirs'}
+                  'province', 'municipality', 'abattoirs',
+                  'contact_number', 'disability', 'training_programme'}
     sort_col = sort_col_raw if sort_col_raw in valid_sort else 'surname'
     sort_dir = 'DESC' if request.query_params.get('sortDir') == 'desc' else 'ASC'
 
@@ -731,7 +734,10 @@ def learner_list_create_view(request):
           {gc('specie')} AS species,
           {gc('province')} AS province,
           {gc('municipality')} AS municipality,
-          {gc('abattoir_name')} AS abattoirs
+          {gc('abattoir_name')} AS abattoirs,
+          {gc('sample_take')} AS contact_number,
+          {gc('disability')} AS disability,
+          {gc('report_to_client')} AS training_programme
         FROM STTTrainingReport
         {where_sql}
         GROUP BY name, surname, id_number
@@ -773,6 +779,8 @@ def learner_filter_values_view(request):
         'training': 'work_station',
         'citizen': 'citizen',
         'race_gender': 'race_gender',
+        'disability': 'disability',
+        'training_programme': 'report_to_client',
     }
     result = {}
     with connection.cursor() as c:
