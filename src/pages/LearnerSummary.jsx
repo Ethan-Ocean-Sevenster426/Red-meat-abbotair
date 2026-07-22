@@ -174,26 +174,29 @@ export default function LearnerSummary() {
   };
 
   // ── Merge ──
-  const toggleSelect = (id) => {
+  // Aggregated rows have no DB id — a learner is identified by name+surname+id_number.
+  const rowKey = (r) => `${r.name ?? ''}|${r.surname ?? ''}|${r.id_number ?? ''}`;
+  const toggleSelect = (key) => {
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else if (next.size < 2) next.add(id);
+      if (next.has(key)) next.delete(key); else if (next.size < 2) next.add(key);
       return next;
     });
   };
 
   const selectedArr = [...selected];
   const canMerge = selectedArr.length === 2;
-  const mergeRowA = canMerge ? rows.find(r => r.id === selectedArr[0]) : null;
-  const mergeRowB = canMerge ? rows.find(r => r.id === selectedArr[1]) : null;
+  const mergeRowA = canMerge ? rows.find(r => rowKey(r) === selectedArr[0]) : null;
+  const mergeRowB = canMerge ? rows.find(r => rowKey(r) === selectedArr[1]) : null;
 
-  const handleMerge = async (primaryId) => {
-    const secondaryId = primaryId === selectedArr[0] ? selectedArr[1] : selectedArr[0];
+  const handleMerge = async (primaryRow) => {
+    const secondaryRow = rowKey(primaryRow) === rowKey(mergeRowA) ? mergeRowB : mergeRowA;
     setMerging(true);
     try {
+      const identity = (r) => ({ name: r.name, surname: r.surname, id_number: r.id_number });
       const res = await fetch('/api/learners/merge', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ primary_id: primaryId, secondary_id: secondaryId, modified_by: user?.displayName || user?.username || '' }),
+        body: JSON.stringify({ primary: identity(primaryRow), secondary: identity(secondaryRow), modified_by: user?.displayName || user?.username || '' }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
@@ -328,11 +331,11 @@ export default function LearnerSummary() {
                 const dirty = hasPending(row.id);
                 const isSaving = saving[row.id];
                 const err = saveErr[row.id];
-                const isSelected = selected.has(row.id);
+                const isSelected = selected.has(rowKey(row));
                 return (
-                  <tr key={row.id} style={{ background: isSelected ? '#e8f0fe' : dirty ? '#e8f4fd' : ri % 2 === 0 ? '#ffffff' : '#f3f2f1' }}>
+                  <tr key={rowKey(row)} style={{ background: isSelected ? '#e8f0fe' : dirty ? '#e8f4fd' : ri % 2 === 0 ? '#ffffff' : '#f3f2f1' }}>
                     <td style={{ ...s.td, width: 30, minWidth: 30, maxWidth: 30, textAlign: 'center', padding: '2px', background: isSelected ? '#e8f0fe' : dirty ? '#e8f4fd' : ri % 2 === 0 ? '#ffffff' : '#f3f2f1' }}>
-                      <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(row.id)}
+                      <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(rowKey(row))}
                         style={{ width: 14, height: 14, cursor: 'pointer', margin: 0, accentColor: '#0078d4' }} title="Select for merge" />
                     </td>
                     {orderedColumns.map(col => {
@@ -378,12 +381,12 @@ export default function LearnerSummary() {
                 <thead>
                   <tr>
                     <th style={{ background: '#0078d4', color: '#fff', padding: '7px 10px', textAlign: 'left', fontWeight: 600 }}>Field</th>
-                    <th style={{ background: '#0078d4', color: '#fff', padding: '7px 10px', textAlign: 'left', fontWeight: 600 }}>Learner A (#{mergeRowA.id})</th>
-                    <th style={{ background: '#0078d4', color: '#fff', padding: '7px 10px', textAlign: 'left', fontWeight: 600 }}>Learner B (#{mergeRowB.id})</th>
+                    <th style={{ background: '#0078d4', color: '#fff', padding: '7px 10px', textAlign: 'left', fontWeight: 600 }}>Learner A ({mergeRowA.name} {mergeRowA.surname})</th>
+                    <th style={{ background: '#0078d4', color: '#fff', padding: '7px 10px', textAlign: 'left', fontWeight: 600 }}>Learner B ({mergeRowB.name} {mergeRowB.surname})</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {['surname', 'name', 'id_number', 'year_of_birth', 'age', 'citizen', 'race_gender', 'work_stations'].map((k, i) => {
+                  {['surname', 'name', 'id_number', 'year_of_birth', 'age', 'citizen', 'race_gender', 'training', 'training_programme', 'abattoirs'].map((k, i) => {
                     const label = COLUMNS.find(c => c.key === k)?.label || k;
                     const diff = (mergeRowA[k] || '') !== (mergeRowB[k] || '');
                     return (
@@ -400,11 +403,11 @@ export default function LearnerSummary() {
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '14px 24px', borderTop: '1px solid #edebe9', gap: 10 }}>
               <button onClick={() => setShowMergeModal(false)} style={s.btnRevert}>Cancel</button>
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={() => handleMerge(mergeRowA.id)} disabled={merging} style={s.btnMergeConfirm}>
-                  {merging ? '…' : `Keep A (#${mergeRowA.id})`}
+                <button onClick={() => handleMerge(mergeRowA)} disabled={merging} style={s.btnMergeConfirm}>
+                  {merging ? '…' : `Keep A (${mergeRowA.name} ${mergeRowA.surname})`}
                 </button>
-                <button onClick={() => handleMerge(mergeRowB.id)} disabled={merging} style={s.btnMergeConfirm}>
-                  {merging ? '…' : `Keep B (#${mergeRowB.id})`}
+                <button onClick={() => handleMerge(mergeRowB)} disabled={merging} style={s.btnMergeConfirm}>
+                  {merging ? '…' : `Keep B (${mergeRowB.name} ${mergeRowB.surname})`}
                 </button>
               </div>
             </div>

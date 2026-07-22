@@ -797,70 +797,53 @@ def learner_filter_values_view(request):
 
 @api_view(['POST'])
 def learner_merge_view(request):
-    """Merge two learners: keep primary, combine work_stations, delete secondary."""
-    primary_id = request.data.get('primary_id')
-    secondary_id = request.data.get('secondary_id')
+    """Merge two aggregated learners: repoint every STTTrainingReport row that
+    matches the secondary identity (name+surname+id_number) to the primary's
+    identity, so the Learner Summary shows a single person."""
+    primary = request.data.get('primary') or {}
+    secondary = request.data.get('secondary') or {}
     merged_by = request.data.get('modified_by') or ''
 
-    if not primary_id or not secondary_id or primary_id == secondary_id:
-        return Response({'message': 'Two different learner IDs are required.'}, status=400)
+    keys = ('name', 'surname', 'id_number')
+    if not any((primary.get(k) or '').strip() for k in keys) or \
+       not any((secondary.get(k) or '').strip() for k in keys):
+        return Response({'message': 'Primary and secondary learner identities are required.'}, status=400)
+    if all((primary.get(k) or '') == (secondary.get(k) or '') for k in keys):
+        return Response({'message': 'Cannot merge a learner with itself.'}, status=400)
 
-    with connection.cursor() as c:
-        c.execute('SELECT * FROM Learners WHERE id = %s', [primary_id])
-        primary = rows_to_dicts(c)
-        c.execute('SELECT * FROM Learners WHERE id = %s', [secondary_id])
-        secondary = rows_to_dicts(c)
+    def identity_filter(ident):
+        qs = STTTrainingReport.objects.all()
+        for k in keys:
+            v = ident.get(k)
+            qs = qs.filter(**{f'{k}__isnull': True}) if v is None else qs.filter(**{k: v})
+        return qs
 
-    if not primary or not secondary:
-        return Response({'message': 'One or both learners not found.'}, status=404)
+    secondary_rows = identity_filter(secondary)
+    if not secondary_rows.exists():
+        return Response({'message': 'Secondary learner not found.'}, status=404)
+    if not identity_filter(primary).exists():
+        return Response({'message': 'Primary learner not found.'}, status=404)
 
-    primary = primary[0]
-    secondary = secondary[0]
+    now = datetime.now().strftime('%Y/%m/%d, %H:%M:%S')
+    old_desc = '; '.join(f'{k}: {secondary.get(k) or ""}' for k in keys)
+    new_desc = '; '.join(f'{k}: {primary.get(k) or ""}' for k in keys)
+    row_ids = list(secondary_rows.values_list('id', flat=True))
+    updated = secondary_rows.update(
+        name=primary.get('name'), surname=primary.get('surname'), id_number=primary.get('id_number'),
+        modified_by=merged_by, modified_time=now,
+        modified_fields='name, surname, id_number (merged)',
+        old_values=old_desc, new_values=new_desc,
+    )
+    for rid in row_ids:
+        append_audit_log('STTTrainingReport', rid, {
+            'modified_by': merged_by,
+            'modified_time': now,
+            'modified_fields': 'name, surname, id_number (learner merge)',
+            'old_values': old_desc,
+            'new_values': new_desc,
+        }, action_type='EDIT')
 
-    # Combine work stations
-    ws_primary = set(filter(None, (primary.get('work_stations') or '').split(', ')))
-    ws_secondary = set(filter(None, (secondary.get('work_stations') or '').split(', ')))
-    combined_ws = ', '.join(sorted(ws_primary | ws_secondary))
-
-    now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-
-    # Update primary with combined work stations
-    with connection.cursor() as c:
-        c.execute(
-            'UPDATE Learners SET work_stations = %s, modified_by = %s, modified_time = %s WHERE id = %s',
-            [combined_ws, merged_by, now, primary_id],
-        )
-
-    # Log the merge on the primary record
-    append_audit_log('Learners', int(primary_id), {
-        'modified_by': merged_by,
-        'modified_time': now,
-        'modified_fields': f'Merged with learner #{secondary_id}',
-        'old_values': json.dumps({
-            'work_stations': primary.get('work_stations') or '',
-        }),
-        'new_values': json.dumps({
-            'work_stations': combined_ws,
-            'merged_from': f"#{secondary_id} {secondary.get('name') or ''} {secondary.get('surname') or ''} ({secondary.get('id_number') or 'no ID'})".strip(),
-        }),
-    }, action_type='EDIT')
-
-    # Log the deletion of the secondary
-    skip = {'id', 'modified_by', 'modified_time', 'modified_fields', 'old_values', 'new_values'}
-    old_data = {k: str(v) for k, v in secondary.items() if k not in skip and v is not None and str(v).strip()}
-    append_audit_log('Learners', int(secondary_id), {
-        'modified_by': merged_by,
-        'modified_time': now,
-        'modified_fields': ','.join(old_data.keys()) if old_data else 'merged into #' + str(primary_id),
-        'old_values': json.dumps(old_data) if old_data else '',
-        'new_values': f'Merged into learner #{primary_id}',
-    }, action_type='DELETE')
-
-    # Delete secondary
-    with connection.cursor() as c:
-        c.execute('DELETE FROM Learners WHERE id = %s', [secondary_id])
-
-    return Response({'ok': True, 'work_stations': combined_ws})
+    return Response({'ok': True, 'rows_repointed': updated})
 
 
 @api_view(['GET'])
