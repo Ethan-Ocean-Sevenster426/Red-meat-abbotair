@@ -664,7 +664,8 @@ def learner_list_create_view(request):
 
     try:
         page = max(1, int(request.query_params.get('page') or '1'))
-        page_size = min(200, int(request.query_params.get('size') or '50'))
+        # Cap high enough that "Export Excel" (size=99999) returns the full roster.
+        page_size = min(100000, int(request.query_params.get('size') or '50'))
     except ValueError:
         page, page_size = 1, 50
     offset = (page - 1) * page_size

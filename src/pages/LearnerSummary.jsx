@@ -303,7 +303,6 @@ export default function LearnerSummary() {
             <thead>
               <tr>
                 <th style={{ ...s.th, width: 30, minWidth: 30, maxWidth: 30, textAlign: 'center', background: '#0078d4' }}><div style={s.thLabel}></div></th>
-                <th style={{ ...s.th, minWidth: 130, maxWidth: 130, background: '#0078d4' }}><div style={s.thLabel}>Actions</div></th>
                 {orderedColumns.map(col => {
                   if (hiddenCols.has(col.key)) return null;
                   const hasFilter = !!(colFilters[col.key] || '').trim();
@@ -321,7 +320,7 @@ export default function LearnerSummary() {
             </thead>
             <tbody>
               {rows.length === 0 && !loading && (
-                <tr><td colSpan={COLUMNS.length + 2} style={{ ...s.td, textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                <tr><td colSpan={COLUMNS.length + 1} style={{ ...s.td, textAlign: 'center', padding: '24px', color: '#64748b' }}>
                   {dbCount === 0 ? 'No learner data yet.' : 'No learners match the current filters.'}
                 </td></tr>
               )}
@@ -335,22 +334,6 @@ export default function LearnerSummary() {
                     <td style={{ ...s.td, width: 30, minWidth: 30, maxWidth: 30, textAlign: 'center', padding: '2px', background: isSelected ? '#e8f0fe' : dirty ? '#e8f4fd' : ri % 2 === 0 ? '#ffffff' : '#f3f2f1' }}>
                       <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(row.id)}
                         style={{ width: 14, height: 14, cursor: 'pointer', margin: 0, accentColor: '#0078d4' }} title="Select for merge" />
-                    </td>
-                    <td style={{ ...s.td, minWidth: 130, maxWidth: 130, background: isSelected ? '#e8f0fe' : dirty ? '#e8f4fd' : ri % 2 === 0 ? '#ffffff' : '#f3f2f1', textAlign: 'center', padding: '2px 4px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                        {dirty ? (
-                          <>
-                            <button onClick={() => saveRow(row)} style={s.btnSave} disabled={isSaving}>{isSaving ? '…' : '✔ Save'}</button>
-                            <button onClick={() => revertRow(row.id)} style={s.btnRevert} disabled={isSaving}>✕ Revert</button>
-                            {err && <div style={{ color: '#a4262c', fontSize: '0.6rem' }} title={err}>⚠</div>}
-                          </>
-                        ) : (
-                          <div style={{ display: 'flex', gap: 2 }}>
-                            <button onClick={() => deleteRow(row.id)} style={s.btnDelete} disabled={deleting[row.id]}>{deleting[row.id] ? '…' : 'Delete'}</button>
-                            <button onClick={() => openHistory(row)} style={s.btnHistory}>History</button>
-                          </div>
-                        )}
-                      </div>
                     </td>
                     {orderedColumns.map(col => {
                       if (hiddenCols.has(col.key)) return null;
