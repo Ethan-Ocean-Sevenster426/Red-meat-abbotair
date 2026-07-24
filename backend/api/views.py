@@ -983,15 +983,16 @@ def stt_parse_excel_view(request):
             name = cv(r, 'I')
             race = cv(r, 'Z')
             gender = cv(r, 'AA')
-            # For ID digit cells, always take the integer part only (cells
-            # here are supposed to hold a single digit 0-9; a "8.06" cell is
-            # treated as "8" and any stray non-digits stripped).
+            # ID cells normally hold a single digit 0-9, but passport holders
+            # write letters in the leading boxes (e.g. E,N,4,0,5,7,8,3 →
+            # EN405783) — keep alphanumerics, strip float artifacts ("8.06"
+            # → "8") and punctuation only.
             id_digit_parts = []
             for c in id_cols:
                 raw = cv(r, c)
-                if '.' in raw:
+                if '.' in raw and raw.split('.')[0].isdigit():
                     raw = raw.split('.')[0]
-                id_digit_parts.append(re.sub(r'\D', '', raw))
+                id_digit_parts.append(re.sub(r'[^0-9A-Za-z]', '', raw).upper())
             id_number = ''.join(id_digit_parts)
             if not surname and not name and not id_number:
                 continue
