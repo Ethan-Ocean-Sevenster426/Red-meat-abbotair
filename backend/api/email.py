@@ -310,6 +310,7 @@ def _rasterize_inks(xlsx_bytes: bytes) -> bytes:
 
 def _render_ink_png(ink_bytes: bytes, cx_emu: int, cy_emu: int) -> bytes | None:
     """Rasterize InkML traces to a transparent PNG sized to cx/cy EMU."""
+    import re
     try:
         from xml.etree import ElementTree as ET
         from PIL import Image, ImageDraw
@@ -320,19 +321,42 @@ def _render_ink_png(ink_bytes: bytes, cx_emu: int, cy_emu: int) -> bytes | None:
     except ET.ParseError:
         return None
     ns = {'i': 'http://www.w3.org/2003/InkML'}
+    # InkML traces may be absolute ("x y F, x y F") or difference-encoded,
+    # where a ' prefix switches a channel to velocity deltas, " to
+    # acceleration deltas, and ! back to absolute; the mode persists for
+    # subsequent unprefixed values of that channel.
+    token_re = re.compile(r"([!'\"]?)\s*(-?\d+(?:\.\d+)?)")
     strokes = []
     for tr in root.findall('.//i:trace', ns):
         text = (tr.text or '').strip()
         if not text:
             continue
         pts = []
-        for entry in text.replace('\n', ' ').split(','):
-            parts = entry.strip().split()
-            if len(parts) >= 2:
+        mode, val, vel = {}, {}, {}
+        for sample in text.replace('\n', ' ').split(','):
+            for idx, (prefix, num) in enumerate(token_re.findall(sample)):
                 try:
-                    pts.append((float(parts[0]), float(parts[1])))
+                    v = float(num)
                 except ValueError:
-                    pass
+                    continue
+                if prefix == "'":
+                    mode[idx] = 1
+                elif prefix == '"':
+                    mode[idx] = 2
+                elif prefix == '!':
+                    mode[idx] = 0
+                m = mode.get(idx, 0)
+                if m == 0:
+                    val[idx] = v
+                    vel[idx] = 0.0
+                elif m == 1:
+                    vel[idx] = v
+                    val[idx] = val.get(idx, 0.0) + v
+                else:
+                    vel[idx] = vel.get(idx, 0.0) + v
+                    val[idx] = val.get(idx, 0.0) + vel[idx]
+            if 0 in val and 1 in val:
+                pts.append((val[0], val[1]))
         if pts:
             strokes.append(pts)
     if not strokes:
