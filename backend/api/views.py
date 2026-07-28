@@ -677,7 +677,7 @@ def learner_list_create_view(request):
 
     where_parts = []
     params = []
-    reserved = {'page', 'size', 'sortCol', 'sortDir', '_idCheck'}
+    reserved = {'page', 'size', 'sortCol', 'sortDir', '_idCheck', 'quarter'}
     filterable = {'name', 'surname', 'id_number', 'year_of_birth', 'age',
                   'citizen', 'race_gender', 'training', 'species',
                   'province', 'municipality', 'abattoirs',
@@ -713,6 +713,15 @@ def learner_list_create_view(request):
         )
     elif id_check == 'missing':
         where_parts.append("(id_number IS NULL OR id_number = '')")
+
+    # Quarter filter on the training start date (Q1 = Jan-Mar, ... Q4 = Oct-Dec)
+    quarter_raw = (request.query_params.get('quarter') or '').strip().upper().lstrip('Q')
+    if quarter_raw.isdigit() and 1 <= int(quarter_raw) <= 4:
+        q = int(quarter_raw)
+        mfn = ("CAST(strftime('%%m', training_start_date) AS INTEGER)"
+               if vendor == 'sqlite' else 'MONTH(training_start_date)')
+        where_parts.append(f"{mfn} BETWEEN %s AND %s")
+        params.extend([(q - 1) * 3 + 1, q * 3])
 
     where_sql = ('WHERE ' + ' AND '.join(where_parts)) if where_parts else ''
 

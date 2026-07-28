@@ -52,6 +52,7 @@ export default function LearnerSummary() {
   const [colOrder, setColOrder]     = useState([]);
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [idCheck, setIdCheck]       = useState('');
+  const [quarter, setQuarter]       = useState('');
   const [deleting, setDeleting]     = useState({});
   const [selected, setSelected]     = useState(new Set());
   const [merging, setMerging]       = useState(false);
@@ -67,6 +68,7 @@ export default function LearnerSummary() {
       if (sortColRef.current) { params.set('sortCol', sortColRef.current); params.set('sortDir', sortDirRef.current); }
       for (const [k, v] of Object.entries(filters)) { if (v) params.set(k, v); }
       if (idCheck) params.set('_idCheck', idCheck);
+      if (quarter) params.set('quarter', quarter);
       const res  = await fetch(`/api/learners?${params}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.message);
@@ -74,9 +76,9 @@ export default function LearnerSummary() {
       setTotal(data.total);
     } catch (e) { console.error(e); }
     setLoading(false);
-  }, [idCheck]);
+  }, [idCheck, quarter]);
 
-  useEffect(() => { loadRows(page, appliedFilters); }, [page, appliedFilters, sortCol, sortDir, idCheck]);
+  useEffect(() => { loadRows(page, appliedFilters); }, [page, appliedFilters, sortCol, sortDir, idCheck, quarter]);
   useEffect(() => { fetch('/api/learners/count').then(r => r.json()).then(d => setDbCount(d.count)).catch(() => {}); }, []);
   useEffect(() => {
     fetch('/api/learners/filter-values').then(r => r.json()).then(d => setFilterOpts(d)).catch(() => {});
@@ -251,10 +253,23 @@ export default function LearnerSummary() {
       if (sortColRef.current) { params.set('sortCol', sortColRef.current); params.set('sortDir', sortDirRef.current); }
       for (const [k, v] of Object.entries(appliedFilters)) { if (v) params.set(k, v); }
       if (idCheck) params.set('_idCheck', idCheck);
+      if (quarter) params.set('quarter', quarter);
       const res = await fetch(`/api/learners?${params}`);
       const data = await res.json();
       const visibleCols = orderedColumns.filter(c => !hiddenCols.has(c.key));
-      await exportStyledExcel({ columns: visibleCols, rows: data.rows, sheetName: 'Learner Summary', fileName: 'Learner_Summary.xlsx' });
+      // The grid derives missing DOB/age from the SA ID on screen — apply the
+      // same fallback to the exported rows so the Excel matches what is shown.
+      const exportRows = data.rows.map(r => {
+        if (r.year_of_birth && r.age) return r;
+        const derived = deriveDobAge(r.id_number);
+        if (!derived) return r;
+        return { ...r, year_of_birth: r.year_of_birth || derived.year_of_birth, age: r.age || derived.age };
+      });
+      // File name mirrors the active filters, e.g. "Gauteng Learner Summary – Q1.xlsx"
+      const provLabel = (appliedFilters.province || '').trim();
+      const base = provLabel && provLabel !== '__blank__' ? `${provLabel} Learner Summary` : 'Learner Summary';
+      const fileName = `${base}${quarter ? ` – Q${quarter}` : ''}.xlsx`;
+      await exportStyledExcel({ columns: visibleCols, rows: exportRows, sheetName: 'Learner Summary', fileName });
     } catch (e) { alert('Export failed: ' + e.message); }
   };
 
@@ -289,6 +304,14 @@ export default function LearnerSummary() {
           <div style={s.toolbarRight}>
             <button onClick={openAddModal} style={s.btnAdd}>+ Add Learner</button>
             {canMerge && <button onClick={() => setShowMergeModal(true)} style={s.btnMerge}>Merge Selected</button>}
+            <select value={quarter} onChange={e => { setQuarter(e.target.value); setPage(1); }}
+              style={quarter ? s.quarterSelectActive : s.quarterSelect} title="Filter by training quarter">
+              <option value="">All Quarters</option>
+              <option value="1">Q1 (Jan–Mar)</option>
+              <option value="2">Q2 (Apr–Jun)</option>
+              <option value="3">Q3 (Jul–Sep)</option>
+              <option value="4">Q4 (Oct–Dec)</option>
+            </select>
             <button onClick={() => { const modes = ['', 'duplicate', 'incorrect', 'missing']; setIdCheck(modes[(modes.indexOf(idCheck) + 1) % modes.length]); setPage(1); }}
               style={idCheck ? s.btnIdCheckActive : s.btnIdCheck}>
               {idCheck === 'duplicate' ? 'Duplicate IDs' : idCheck === 'incorrect' ? 'Incorrect IDs' : idCheck === 'missing' ? 'Missing IDs' : 'ID Check'}
@@ -520,6 +543,8 @@ const s = {
   btnAdd:      { background: '#107c10', border: '1px solid #107c10', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   btnMerge:    { background: '#ca5010', border: '1px solid #ca5010', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   btnIdCheck:  { background: '#986f0b', border: '1px solid #986f0b', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
+  quarterSelect: { background: '#ffffff', border: '1px solid #8a8886', color: '#323130', borderRadius: '2px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
+  quarterSelectActive: { background: '#e8f4fd', border: '1px solid #0078d4', color: '#005a9e', borderRadius: '2px', padding: '4px 8px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, width: 'auto', lineHeight: 1 },
   btnIdCheckActive: { background: '#fff4ce', border: '1px solid #f7c948', color: '#8a6914', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, width: 'auto', lineHeight: 1 },
   btnExport:   { background: '#0078d4', border: '1px solid #0078d4', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
   btnChangeLog:{ background: '#008272', border: '1px solid #008272', color: '#ffffff', borderRadius: '2px', padding: '5px 12px', cursor: 'pointer', fontSize: '0.78rem', width: 'auto', lineHeight: 1 },
