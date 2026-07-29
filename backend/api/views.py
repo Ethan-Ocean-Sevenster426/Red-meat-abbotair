@@ -1559,6 +1559,10 @@ def quotation_generate_view(request):
                     cell_updates[f'H{row}'] = -abs(acc) if acc is not None else ''
 
         xlsx_bytes = email_svc.modify_xlsx_cells(template_bytes, cell_updates, hidden_rows=unused_line_rows)
+        # Bake the full print area into the downloadable workbook too — the
+        # template carries a stale $A$1:$I$44 print area, so "Save as PDF"
+        # from Excel cut off everything after the discount rows.
+        xlsx_bytes = email_svc._bake_page_setup(xlsx_bytes, '$A$1:$I$52')
         pdf_bytes = email_svc.convert_excel_to_pdf(xlsx_bytes, print_area='$A$1:$I$52', setup_page=True)
         folder = f"Quotation {date_str.replace('/', '-')} {sanitize_fs_name(data.get('clientName'))}"
 
