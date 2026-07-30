@@ -126,7 +126,6 @@ const REPORT_COLS = [
   { key: 'hdis',                label: "HDI's",   w: 48, num: true },
   { key: 'am',                  label: 'AM',  w: 40, num: true },
   { key: 'af',                  label: 'AF',  w: 40, num: true },
-  { key: 'ad',                  label: 'AD',  w: 40, num: true },
   { key: 'cm',                  label: 'CM',  w: 40, num: true },
   { key: 'cf',                  label: 'CF',  w: 40, num: true },
   { key: 'im',                  label: 'IM',  w: 40, num: true },
