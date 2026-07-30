@@ -105,7 +105,17 @@ def _hide_rows(xml: str, rows: list) -> str:
             if 'hidden="1"' not in tag:
                 return tag.replace(f'r="{row_num}"', f'r="{row_num}" hidden="1"')
         return m.group(0)
-    return re.sub(r'<row\s[^>]*r="(\d+)"[^>]*>', add_hidden, xml)
+    xml = re.sub(r'<row\s[^>]*r="(\d+)"[^>]*>', add_hidden, xml)
+    # Strip styling from the hidden rows' cells (and the row itself) so they
+    # render as clean blanks — no borders — if someone unhides them in Excel.
+    def strip_row_styles(m):
+        row_num = int(m.group(1))
+        if row_num not in row_set:
+            return m.group(0)
+        block = re.sub(r'(<row\s[^>]*?)\s+s="\d+"', r'\1', m.group(0), count=1)
+        block = re.sub(r'(<row\s[^>]*?)\s+customFormat="1"', r'\1', block, count=1)
+        return re.sub(r'(<c\s[^>]*?)\s+s="\d+"', r'\1', block)
+    return re.sub(r'<row\s[^>]*r="(\d+)"[^>]*(?:/>|>.*?</row>)', strip_row_styles, xml, flags=re.DOTALL)
 
 
 def _strip_formula_cache(xml: str) -> str:

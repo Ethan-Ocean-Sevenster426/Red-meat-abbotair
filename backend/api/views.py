@@ -1486,13 +1486,12 @@ def quotation_generate_view(request):
             try:
                 d = datetime.fromisoformat(item.get('date')) if item.get('date') else None
                 d_end = datetime.fromisoformat(item.get('endDate')) if item.get('endDate') else None
+                # Day name then date, e.g. "Thursday - 30/07/2026"
+                day_date = lambda dt: f"{dt.strftime('%A')} - {dt.strftime('%d/%m/%Y')}"
                 if d and d_end and d_end != d:
-                    if d.month == d_end.month and d.year == d_end.year:
-                        cell_updates[f'B{row}'] = f"{d.day}-{d_end.day} {d.strftime('%B %Y')}"
-                    else:
-                        cell_updates[f'B{row}'] = f"{d.day} {d.strftime('%B %Y')} - {d_end.day} {d_end.strftime('%B %Y')}"
+                    cell_updates[f'B{row}'] = f"{day_date(d)} to {day_date(d_end)}"
                 elif d:
-                    cell_updates[f'B{row}'] = f"{d.day} {d.strftime('%B %Y')}"
+                    cell_updates[f'B{row}'] = day_date(d)
                 else:
                     cell_updates[f'B{row}'] = ''
             except (ValueError, TypeError):
@@ -1539,8 +1538,11 @@ def quotation_generate_view(request):
             cell_updates['G37'] = safe_float(aud.get('distance')) or ''
             cell_updates['H37'] = safe_float(aud.get('accommodation')) or ''
 
-        # Discount lines (rows 41-44)
-        disc = data.get('discounts')
+        # Discount lines (rows 41-44) — non-members never see the discount
+        # section: their discounts are ignored and rows 41-45 (discount lines,
+        # motivation text, "Discount provided") are hidden entirely.
+        is_member = (data.get('rmaaMember') or '').strip().lower() == 'yes'
+        disc = data.get('discounts') if is_member else None
         if disc:
             disc_rows = [
                 (41, 'Skills Programme', 'skillsAmount', 'skillsKm', 'skillsAccomm'),
@@ -1558,7 +1560,18 @@ def quotation_generate_view(request):
                     cell_updates[f'G{row}'] = -abs(km) if km is not None else ''
                     cell_updates[f'H{row}'] = -abs(acc) if acc is not None else ''
 
-        xlsx_bytes = email_svc.modify_xlsx_cells(template_bytes, cell_updates, hidden_rows=unused_line_rows)
+        hidden_rows = list(unused_line_rows)
+        if not is_member:
+            hidden_rows += [41, 42, 43, 44, 45]
+            # Wipe the template's static discount content (motivation text,
+            # "Discounted" labels, row formulas, "Discount provided") so the
+            # section is gone even if the rows are unhidden in Excel.
+            for r in range(41, 45):
+                for col in ('A', 'C', 'D', 'F', 'G', 'H', 'I'):
+                    cell_updates[f'{col}{r}'] = ''
+            cell_updates['A45'] = ''
+            cell_updates['I45'] = ''
+        xlsx_bytes = email_svc.modify_xlsx_cells(template_bytes, cell_updates, hidden_rows=hidden_rows)
         # Bake the full print area into the downloadable workbook too — the
         # template carries a stale $A$1:$I$44 print area, so "Save as PDF"
         # from Excel cut off everything after the discount rows.
