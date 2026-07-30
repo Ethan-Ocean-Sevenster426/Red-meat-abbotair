@@ -181,7 +181,17 @@ export default function LearnerSummary() {
   const toggleSelect = (key) => {
     setSelected(prev => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else if (next.size < 2) next.add(key);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  };
+
+  const allSelected = rows.length > 0 && rows.every(r => selected.has(rowKey(r)));
+  const toggleSelectAll = () => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (rows.every(r => next.has(rowKey(r)))) rows.forEach(r => next.delete(rowKey(r)));
+      else rows.forEach(r => next.add(rowKey(r)));
       return next;
     });
   };
@@ -328,7 +338,11 @@ export default function LearnerSummary() {
           <table style={s.table}>
             <thead>
               <tr>
-                <th style={{ ...s.th, width: 30, minWidth: 30, maxWidth: 30, textAlign: 'center', background: '#0078d4' }}><div style={s.thLabel}></div></th>
+                <th style={{ ...s.th, width: 30, minWidth: 30, maxWidth: 30, textAlign: 'center', background: '#0078d4' }}>
+                  <input type="checkbox" checked={allSelected} onChange={toggleSelectAll}
+                    style={{ width: 14, height: 14, cursor: 'pointer', margin: 0, accentColor: '#ffffff' }}
+                    title={allSelected ? 'Unselect all' : 'Select all'} />
+                </th>
                 {orderedColumns.map(col => {
                   if (hiddenCols.has(col.key)) return null;
                   const hasFilter = !!(colFilters[col.key] || '').trim();
