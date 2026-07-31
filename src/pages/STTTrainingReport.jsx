@@ -9,7 +9,7 @@ import { deriveDobAge } from '../utils/saId.js';
 // ─── Column definitions ───────────────────────────────────────────────────────
 
 const PROVINCE_OPTS  = ['','Gauteng','Limpopo','North West','Free State','KwaZulu-Natal','Eastern Cape','Western Cape','Mpumalanga','Northern Cape'];
-const DISABILITY_OPTS = ['', 'Yes', 'No'];
+const DISABILITY_OPTS = ['', 'N/A', 'Yes', 'No'];
 const ONE_OPTS       = ['', '1'];
 
 // Province values are stored without a separator (e.g. "KwaZuluNatal"); the UI shows the proper hyphenated name.
@@ -319,6 +319,7 @@ export default function STTTrainingReport() {
     for (const col of COLUMNS) {
       if (!col.readonly && !MODAL_EXCLUDE.has(col.key)) blank[col.key] = '';
     }
+    blank.disability = 'N/A';
     setNewEntry(blank);
     setAddError('');
     setShowAddModal(true);

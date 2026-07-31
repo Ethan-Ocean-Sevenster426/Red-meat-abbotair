@@ -1019,6 +1019,7 @@ def stt_parse_excel_view(request):
             rows_out.append({
                 'work_station': work_station, 'surname': surname, 'name': name,
                 'id_number': id_number, 'race_gender': rg,
+                'disability': 'N/A',
                 **rg_flags,
             })
         return Response({'session': session, 'rows': rows_out})
