@@ -756,8 +756,12 @@ def learner_list_create_view(request):
     with connection.cursor() as c:
         c.execute(f"SELECT COUNT(*) FROM ({inner_sql}) AS sub", params)
         total = c.fetchone()[0]
+        # Tiebreakers make the order deterministic — without them, learners
+        # sharing a surname can swap between page requests (duplicated on one
+        # page, skipped on another).
         c.execute(
-            f"SELECT * FROM ({inner_sql}) AS sub ORDER BY {sort_col} {sort_dir} "
+            f"SELECT * FROM ({inner_sql}) AS sub "
+            f"ORDER BY {sort_col} {sort_dir}, surname ASC, name ASC, id_number ASC "
             f"LIMIT %s OFFSET %s",
             params + [page_size, offset],
         )
