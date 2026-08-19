@@ -166,19 +166,20 @@ def _apply_cell_updates(xml: str, cells: dict) -> str:
 
 
 def convert_excel_to_pdf(xlsx_buffer: bytes, print_area: str = '$A$1:$AD$53',
-                         setup_page: bool = False) -> bytes:
+                         setup_page: bool = False, orientation: str = 'portrait') -> bytes:
     """Convert Excel to PDF.
 
     Tries Microsoft Graph (renders ink/signatures faithfully) when configured;
     falls back to LibreOffice. setup_page=True bakes print-area + fit-to-page
     into the xlsx before converting (for generated quotations and STT exports).
+    orientation: 'portrait' (quotations) or 'landscape' (wide STT registers).
     """
     # Rasterize ink (stylus) annotations — neither LibreOffice nor Graph PDF
     # export renders Excel's <xdr:contentPart> ink, so we convert them to PNG
     # images first.
     xlsx_buffer = _rasterize_inks(xlsx_buffer)
     if setup_page:
-        xlsx_buffer = _bake_page_setup(xlsx_buffer, print_area)
+        xlsx_buffer = _bake_page_setup(xlsx_buffer, print_area, orientation)
     if _graph_configured():
         try:
             return _convert_via_graph(xlsx_buffer, print_area)
@@ -527,7 +528,7 @@ def _convert_via_graph(xlsx_buffer: bytes, print_area: str) -> bytes:
         )
 
 
-def _bake_page_setup(xlsx_bytes: bytes, print_area: str) -> bytes:
+def _bake_page_setup(xlsx_bytes: bytes, print_area: str, orientation: str = 'portrait') -> bytes:
     """Set fit-to-page/A4/portrait/print-area in xlsx via direct XML edits.
 
     Avoids openpyxl round-trip so embedded drawings/images survive.
@@ -542,18 +543,18 @@ def _bake_page_setup(xlsx_bytes: bytes, print_area: str) -> bytes:
             for item in src.namelist():
                 content = src.read(item)
                 if item == 'xl/worksheets/sheet1.xml':
-                    content = _inject_page_setup(content.decode('utf-8'), print_area).encode('utf-8')
+                    content = _inject_page_setup(content.decode('utf-8'), print_area, orientation).encode('utf-8')
                 elif item == 'xl/workbook.xml':
                     content = _inject_print_area(content.decode('utf-8'), print_area).encode('utf-8')
                 dst.writestr(item, content)
     return out.getvalue()
 
 
-def _inject_page_setup(xml: str, print_area: str) -> str:
+def _inject_page_setup(xml: str, print_area: str, orientation: str = 'portrait') -> str:
     import re
-    # pageSetup: A4 (paperSize=9), portrait, fit-to-1-page
-    page_setup = ('<pageSetup paperSize="9" fitToWidth="1" fitToHeight="1" '
-                  'orientation="portrait"/>')
+    # pageSetup: A4 (paperSize=9), fit-to-1-page, portrait or landscape
+    page_setup = (f'<pageSetup paperSize="9" fitToWidth="1" fitToHeight="1" '
+                  f'orientation="{orientation}"/>')
     # sheetPr/pageSetUpPr: enable fit-to-page
     fit_pr = '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr>'
     # pageMargins: equal left/right for centered look

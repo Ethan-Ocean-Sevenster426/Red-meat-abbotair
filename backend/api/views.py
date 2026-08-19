@@ -1035,8 +1035,9 @@ def stt_export_pdf_view(request):
         return Response({'message': 'No file uploaded'}, status=400)
     xlsx_buf = f.read()
     try:
+        # Registers are ~30 columns wide — landscape, per Dr Louw's request.
         pdf_buf = email_svc.convert_excel_to_pdf(
-            xlsx_buf, print_area='$A$1:$AD$53', setup_page=True,
+            xlsx_buf, print_area='$A$1:$AD$53', setup_page=True, orientation='landscape',
         )
     except Exception as e:
         return Response({'message': f'PDF conversion failed: {e}'}, status=500)
